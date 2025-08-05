@@ -3,12 +3,16 @@ import discord
 from discord.ext import commands
 import asyncio
 import os
+import database
+from dotenv import load_dotenv
+
+# 載入 .env 檔案中的環境變數
+load_dotenv()
 
 # --- 設定 ---
-# 在此處替換成您的 Discord Bot Token
-# 建議使用環境變數來管理您的 token，而不是直接寫在程式碼中
-# 例如: TOKEN = os.getenv("DISCORD_TOKEN")
-TOKEN = 'MTM5OTc3NzIwNDUzNTE2OTAzNA.GbxeIL.Rpog8N8Z-5ILaxhNmreGfcZN998Bzfjv37VtJU' 
+TOKEN = os.getenv("DISCORD_TOKEN")
+if not TOKEN:
+    raise ValueError("錯誤：請在 .env 檔案中設定 DISCORD_TOKEN") 
 INTENTS = discord.Intents.default()
 INTENTS.message_content = True # 允許讀取訊息內容
 INTENTS.voice_states = True    # 允許讀取語音狀態
@@ -41,6 +45,8 @@ async def load_cogs():
 
 async def main():
     """主函式，用來啟動機器人"""
+    # 初始化資料庫
+    database.setup_database()
     async with bot:
         await load_cogs()
         await bot.start(TOKEN)

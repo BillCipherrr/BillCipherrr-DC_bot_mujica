@@ -1,2 +1,4 @@
-discord.py[voice]
+discord.py
 yt-dlp
+python-dotenv
+google-api-python-client
