@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  discord-music-bot:
+    build: .
+    container_name: discord-music-bot
+    # 從 .env 檔案載入環境變數
+    env_file:
+      - ./.env
+    # 如果需要，可以將 downloads 資料夾掛載為 volume，以便持久化下載的歌曲
+    # 但由於我們現在是純串流模式，這通常不再需要。
+    # 如果未來您又想啟用下載功能，可以取消註解下面這行：
+    # volumes:
+    #   - ./downloads:/app/downloads
+    restart: unless-stopped

@@ -8,6 +8,7 @@ class LoopMode(Enum):
     SONG = 1
     QUEUE = 2
     SHUFFLE = 3
+    RECOMMEND = 4
 
 class PlayerView(discord.ui.View):
     def __init__(self, music_cog, interaction):
@@ -36,6 +37,7 @@ class PlayerView(discord.ui.View):
         if mode == LoopMode.SONG: self.loop_one_button.style = discord.ButtonStyle.primary
         elif mode == LoopMode.QUEUE: self.loop_queue_button.style = discord.ButtonStyle.primary
         elif mode == LoopMode.SHUFFLE: self.shuffle_button.style = discord.ButtonStyle.primary
+        elif mode == LoopMode.RECOMMEND: self.recommend_button.style = discord.ButtonStyle.primary
 
     def create_progress_bar(self, current, total):
         if total == 0: return "--:-- / --:--", "`[--------------------]`"
@@ -95,8 +97,12 @@ class PlayerView(discord.ui.View):
     @discord.ui.button(emoji="⏯️", label="Pause", style=discord.ButtonStyle.secondary)
     async def pause_resume_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         vc = interaction.guild.voice_client
-        if vc and vc.is_playing(): vc.pause()
-        elif vc and vc.is_paused(): vc.resume()
+        if vc and vc.is_playing():
+            vc.pause()
+            await self.music_cog.start_disconnect_timer(interaction)
+        elif vc and vc.is_paused():
+            vc.resume()
+            self.music_cog.cancel_disconnect_timer(interaction.guild.id)
         await self.update_player(self.music_cog.get_current_position(interaction.guild.id))
         await interaction.response.defer()
 
@@ -121,6 +127,12 @@ class PlayerView(discord.ui.View):
     @discord.ui.button(emoji="🔀", label="Shuffle", style=discord.ButtonStyle.secondary)
     async def shuffle_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.music_cog.toggle_loop_mode(interaction.guild.id, LoopMode.SHUFFLE)
+        await self.update_player(self.music_cog.get_current_position(interaction.guild.id))
+        await interaction.response.defer()
+
+    @discord.ui.button(emoji="💡", label="Recommend", style=discord.ButtonStyle.secondary)
+    async def recommend_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.music_cog.toggle_loop_mode(interaction.guild.id, LoopMode.RECOMMEND)
         await self.update_player(self.music_cog.get_current_position(interaction.guild.id))
         await interaction.response.defer()
 
