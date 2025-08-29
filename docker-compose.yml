@@ -1,9 +1,0 @@
-services:
-  bot:
-    build: .
-    volumes:
-      - ./:/app
-    # 新增這一行，指定載入 .env 檔案
-    env_file:
-      - .env
-    restart: unless-stopped

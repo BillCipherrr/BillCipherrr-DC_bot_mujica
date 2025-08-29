@@ -7,6 +7,8 @@ import asyncio
 import random
 import time
 from collections import deque
+from urllib.parse import urlparse, parse_qs, urlencode
+
 
 # 匯入其他的 View
 from views.player_view import PlayerView, LoopMode
@@ -48,6 +50,20 @@ FFMPEG_OPTIONS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
     'options': '-vn',
 }
+
+def normalize_youtube_url(url: str) -> str:
+    # 解析網址
+    parsed = urlparse(url)
+    # 檢查是否為 youtu.be 短網址
+    if parsed.netloc in ["youtu.be"]:
+        video_id = parsed.path.lstrip("/")
+        query = f"?{parsed.query}" if parsed.query else ""
+        return f"https://www.youtube.com/watch?v={video_id}{query}"
+    # 檢查是否為 youtube.com 並有 videoId
+    if parsed.netloc in ["www.youtube.com", "youtube.com"]:
+        # 已是標準格式，直接回傳
+        return url
+    return url
 
 class MusicCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -258,7 +274,7 @@ class MusicCog(commands.Cog):
                     })
             else:
                 song_info = {
-                    'url': info.get('webpage_url', url), 
+                    'url': info.get('webpage_url', normalize_youtube_url(url)), 
                     'title': info.get('title', '未知歌曲'), 
                     'requester': interaction.user
                 }
