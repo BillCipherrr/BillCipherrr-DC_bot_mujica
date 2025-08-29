@@ -9,9 +9,9 @@ env/
 __pycache__/
 *.pyc
 
-# 下載的音樂檔案
-/downloads/
-
 # IDE 或編輯器設定檔
 .vscode/
 .idea/
+
+# macOS
+.DS_Store
