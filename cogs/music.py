@@ -6,6 +6,8 @@ import os
 import asyncio
 import random
 import time
+import logging
+import traceback
 from collections import deque
 from urllib.parse import urlparse, parse_qs, urlencode
 
@@ -77,6 +79,7 @@ class MusicCog(commands.Cog):
         self.volumes = {}
         self.disconnect_timers = {}
         self.playlist_enabled = {}
+        self.logger = logging.getLogger(__name__)
 
     # --- 輔助函式 ---
     def get_queue(self, guild_id: int) -> deque: return self.queues.setdefault(guild_id, deque())
@@ -212,6 +215,7 @@ class MusicCog(commands.Cog):
             self.start_progress_task(guild_id)
 
         except Exception as e:
+            self.logger.error("play_next error for %s", next_song.get('title'), exc_info=e)
             await interaction.channel.send(f"播放 **{next_song['title']}** 時發生錯誤: {e}")
             asyncio.run_coroutine_threadsafe(self.play_next(interaction), self.bot.loop)
 
@@ -289,6 +293,7 @@ class MusicCog(commands.Cog):
                 if view: await view.update_player(self.get_current_position(interaction.guild.id))
 
         except Exception as e:
+            self.logger.error("play command error", exc_info=e)
             await interaction.followup.send(f"處理歌曲時發生錯誤: {e}")
 
     # --- 其他指令 ---
