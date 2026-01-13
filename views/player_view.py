@@ -133,6 +133,7 @@ class PlayerView(discord.ui.View):
     @discord.ui.button(emoji="💡", label="Recommend", style=discord.ButtonStyle.secondary)
     async def recommend_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.music_cog.toggle_loop_mode(interaction.guild.id, LoopMode.RECOMMEND)
+        await self.music_cog.ensure_recommendation_seed(interaction)
         await self.update_player(self.music_cog.get_current_position(interaction.guild.id))
         await interaction.response.defer()
 

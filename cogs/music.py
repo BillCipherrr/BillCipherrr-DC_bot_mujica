@@ -67,6 +67,21 @@ def normalize_youtube_url(url: str) -> str:
         return url
     return url
 
+
+def extract_video_id(url: str):
+    parsed = urlparse(url)
+    if parsed.netloc in ("youtu.be", "www.youtu.be"):
+        return parsed.path.lstrip("/")
+    if parsed.netloc.endswith("youtube.com"):
+        qs = parse_qs(parsed.query)
+        return qs.get("v", [None])[0]
+    return None
+
+
+def normalize_title_for_dedup(title: str) -> str:
+    cleaned = ''.join(ch for ch in title.lower() if ch.isalnum() or ch.isspace())
+    return ' '.join(cleaned.split())
+
 class MusicCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -92,7 +107,7 @@ class MusicCog(commands.Cog):
     def get_player_view(self, guild_id: int): return self.player_views.get(guild_id)
     def set_player_view(self, guild_id: int, view): self.player_views[guild_id] = view
     def get_volume(self, guild_id: int) -> float: return self.volumes.setdefault(guild_id, 0.5)
-    def is_playlist_enabled(self, guild_id: int) -> bool: return self.playlist_enabled.setdefault(guild_id, False)
+    def is_playlist_enabled(self, guild_id: int) -> bool: return self.playlist_enabled.setdefault(guild_id, True)
 
     def cancel_disconnect_timer(self, guild_id: int):
         if guild_id in self.disconnect_timers:
@@ -137,6 +152,26 @@ class MusicCog(commands.Cog):
         if view:
             position = self.get_current_position(guild_id)
             await view.update_player(position)
+
+    async def ensure_recommendation_seed(self, interaction: discord.Interaction):
+        """When recommend mode is enabled and queue is empty, prefetch one recommendation so users can see it right away."""
+        guild_id = interaction.guild.id
+        if self.get_loop_mode(guild_id) != LoopMode.RECOMMEND: return
+        queue = self.get_queue(guild_id)
+        if queue: return
+        current = self.get_current_song(guild_id)
+        if not current: return
+        try:
+            rec = await self.get_recommendation(current, interaction.user)
+            queue.append(rec)
+            view = self.get_player_view(guild_id)
+            if view: await view.update_player(self.get_current_position(guild_id))
+        except Exception as e:
+            self.logger.warning("ensure_recommendation_seed failed", exc_info=e)
+            try:
+                await interaction.followup.send(f"推薦歌曲時發生錯誤: {e}", ephemeral=True)
+            except Exception:
+                pass
 
     # --- 核心播放邏輯 (已修正) ---
     async def play_next(self, interaction: discord.Interaction):
@@ -223,24 +258,73 @@ class MusicCog(commands.Cog):
     async def get_recommendation(self, song_info: dict, requester: discord.User):
         if not youtube:
             raise Exception("YouTube API 未正確初始化，無法使用推薦功能。")
-        search_query = song_info.get('uploader', song_info.get('title'))
+
+        video_id = extract_video_id(song_info.get('url', '') or song_info.get('webpage_url', ''))
+        if not video_id:
+            raise Exception("無法解析當前歌曲的 videoId。")
+
         loop = asyncio.get_event_loop()
-        search_response = await loop.run_in_executor(None, lambda: youtube.search().list(
-            q=search_query, part='snippet', maxResults=15, type='video', videoCategoryId='10'
-        ).execute())
-        played_urls = {s['url'] for s in self.get_queue(requester.guild.id)}
-        if self.get_current_song(requester.guild.id):
-            played_urls.add(self.get_current_song(requester.guild.id)['url'])
-        possible_choices = [
-            item for item in search_response.get('items', []) 
-            if f"https://www.youtube.com/watch?v={item['id']['videoId']}" not in played_urls
-        ]
-        if not possible_choices:
+
+        def run_search(params):
+            return youtube.search().list(**params).execute()
+
+        params_related = {
+            'part': 'snippet',
+            'type': 'video',
+            'relatedToVideoId': video_id,
+            'maxResults': 10,
+            'videoCategoryId': '10',
+            'order': 'relevance',
+            'safeSearch': 'none'
+        }
+
+        # 部分舊版 google-api-python-client 可能不支援 relatedToVideoId，失敗時改用關鍵字搜尋回退。
+        try:
+            search_response = await loop.run_in_executor(None, lambda: run_search(params_related))
+        except TypeError:
+            fallback_query = song_info.get('title') or song_info.get('uploader') or ''
+            params_fallback = {
+                'part': 'snippet',
+                'type': 'video',
+                'q': fallback_query,
+                'maxResults': 10,
+                'videoCategoryId': '10',
+                'order': 'relevance',
+                'safeSearch': 'none'
+            }
+            search_response = await loop.run_in_executor(None, lambda: run_search(params_fallback))
+
+        played_ids = {
+            extract_video_id(s.get('url', '') or s.get('webpage_url', ''))
+            for s in self.get_queue(requester.guild.id)
+        }
+        current = self.get_current_song(requester.guild.id)
+        if current:
+            played_ids.add(extract_video_id(current.get('url', '') or current.get('webpage_url', '')))
+
+        # 累積最近播過的歌曲 (含重新上傳的可能) 以避免推薦重複
+        recent_rows = database.get_recent_songs(requester.guild.id, limit=20)
+        played_ids.update(extract_video_id(r['youtube_url']) for r in recent_rows if r)
+        played_titles = {normalize_title_for_dedup(r['title']) for r in recent_rows if r and r['title']}
+
+        def to_video_id(item):
+            return item['id']['videoId']
+
+        candidates = []
+        for item in search_response.get('items', []):
+            vid = to_video_id(item)
+            title_norm = normalize_title_for_dedup(item['snippet']['title'])
+            if vid in played_ids: continue
+            if title_norm in played_titles: continue
+            candidates.append(item)
+        if not candidates:
             raise Exception("找不到可推薦的歌曲。")
-        chosen_video = random.choice(possible_choices)
+
+        chosen = candidates[0]  # 取最相關的第一首（若想要隨機，可改為 random.choice(candidates[:3]))
+        vid = to_video_id(chosen)
         return {
-            'url': f"https://www.youtube.com/watch?v={chosen_video['id']['videoId']}",
-            'title': chosen_video['snippet']['title'],
+            'url': f"https://www.youtube.com/watch?v={vid}",
+            'title': chosen['snippet']['title'],
             'requester': self.bot.user
         }
 
@@ -271,9 +355,13 @@ class MusicCog(commands.Cog):
                 await interaction.followup.send(f"✅ 已將播放列表 **{info['title']}** ({len(entries)} 首歌) 加入佇列。")
                 for entry in entries:
                     if not entry: continue
+                    entry_url = entry.get('webpage_url') or entry.get('url')
+                    if entry_url and not entry_url.startswith('http'):
+                        entry_url = f"https://www.youtube.com/watch?v={entry_url}"
+                    entry_url = normalize_youtube_url(entry_url) if entry_url else None
                     queue.append({
-                        'url': entry.get('url'), 
-                        'title': entry.get('title', '未知歌曲'), 
+                        'url': entry_url,
+                        'title': entry.get('title', '未知歌曲'),
                         'requester': interaction.user
                     })
             else:

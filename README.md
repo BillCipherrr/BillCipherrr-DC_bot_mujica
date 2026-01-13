@@ -1,0 +1,196 @@
+# Discord Music Bot - Mujica
+
+[中文版](./README_zh-TW.md) | English
+
+A feature-rich Discord music bot built with discord.py, supporting YouTube playback, intelligent recommendations, and comprehensive playlist management.
+
+## ✨ Features
+
+### 🎵 Core Music Features
+- **YouTube Playback**: Play individual songs or entire playlists from YouTube
+- **Queue Management**: Intelligent queue system with visual display in player
+- **Multiple Loop Modes**:
+  - None: Play songs in order
+  - Single Song: Repeat current song
+  - Queue: Repeat entire queue
+  - Shuffle: Random playback
+  - Recommend: Auto-play recommended songs based on current track
+- **Volume Control**: Adjustable volume with persistent settings per server
+- **Real-time Progress**: Live progress bar with 10-second auto-update
+
+### 🤖 Smart Features
+- **Intelligent Recommendations**: YouTube API-powered song recommendations with duplicate detection
+- **Auto-disconnect**: Automatically leaves channel after 5 minutes of inactivity
+- **Playlist Support**: Server administrators can enable/disable playlist support
+- **Play History**: Track and display user and server listening history
+
+### 🎮 Interactive Controls
+- **Button-based Player**: Intuitive control interface with:
+  - Play/Pause toggle
+  - Skip to next song
+  - Volume adjustment
+  - Loop mode toggles
+- **Progress Display**: Shows current position, duration, and visual progress bar
+- **Queue Preview**: Display upcoming songs directly in player embed
+
+### 📊 History & Statistics
+- **User History**: View personal listening history with play counts
+- **Server History**: Server-wide playback statistics
+- **SQLite Database**: Persistent storage for songs and play history
+
+## 📋 Prerequisites
+
+- Python 3.8 or higher
+- FFmpeg installed on your system
+- Discord Bot Token
+- YouTube Data API v3 Key (optional, for recommendation features)
+
+## 🚀 Installation
+
+1. **Clone the repository**
+```bash
+git clone https://github.com/yourusername/BillCipherrr-DC_bot_mujica.git
+cd BillCipherrr-DC_bot_mujica
+```
+
+2. **Install dependencies**
+```bash
+pip install -r requirements.txt
+```
+
+3. **Install FFmpeg**
+   - **Ubuntu/Debian**: `sudo apt-get install ffmpeg`
+   - **macOS**: `brew install ffmpeg`
+   - **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
+
+4. **Set up environment variables**
+
+Create a `.env` file in the project root:
+```env
+DISCORD_TOKEN=your_discord_bot_token_here
+YOUTUBE_API_KEY=your_youtube_api_key_here
+```
+
+5. **Run the bot**
+```bash
+python bot.py
+```
+
+## 🎯 Commands
+
+### Music Commands
+- `/play <url>` - Play a song or playlist from YouTube
+- `/leave` - Disconnect bot and clear queue
+
+### Player Controls (Button Interface)
+- **⏸️ Pause** - Pause/Resume playback
+- **⏭️ Skip** - Skip to next song
+- **🔁 Loop One** - Toggle single song repeat
+- **🔁 Loop Queue** - Toggle queue repeat
+- **🔀 Shuffle** - Toggle shuffle mode
+- **🎲 Recommend** - Toggle auto-recommendation mode
+- **🔊 Volume** - Adjust playback volume
+
+### History Commands
+- `/history user [user]` - View listening history for a user
+- `/history server` - View server-wide listening history
+
+### Admin Commands
+- `/settings` - Open bot settings panel (requires Manage Server permission)
+  - Toggle playlist support on/off
+
+## 🏗️ Project Structure
+
+```
+BillCipherrr-DC_bot_mujica/
+├── bot.py                 # Main bot entry point
+├── database.py            # SQLite database functions
+├── requirements.txt       # Python dependencies
+├── cogs/
+│   ├── music.py          # Music playback logic
+│   └── history.py        # History tracking commands
+└── views/
+    ├── player_view.py    # Interactive player UI
+    └── settings_view.py  # Admin settings panel
+```
+
+## 🔧 Configuration
+
+### YouTube API Setup
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project
+3. Enable YouTube Data API v3
+4. Create credentials (API Key)
+5. Add the API key to your `.env` file
+
+### Discord Bot Setup
+1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
+2. Create a new application
+3. Go to "Bot" section and create a bot
+4. Enable the following Privileged Gateway Intents:
+   - Message Content Intent
+   - Server Members Intent
+5. Copy the bot token to your `.env` file
+6. Invite the bot with these permissions:
+   - Send Messages
+   - Embed Links
+   - Connect
+   - Speak
+   - Use Voice Activity
+
+## 🎨 Features in Detail
+
+### Recommendation System
+The bot uses YouTube API to find related videos based on:
+- Current playing song
+- Prevents duplicate recommendations
+- Filters out recently played songs (last 20 tracks)
+- Normalizes titles to avoid re-uploads
+
+### Database Schema
+- **songs**: Stores unique songs with URL, title, and duration
+- **play_history**: Records every play with guild, user, timestamp
+
+## 🛠️ Dependencies
+
+- `discord.py[voice]` - Discord API wrapper with voice support
+- `yt-dlp` - YouTube video/audio downloader
+- `python-dotenv` - Environment variable management
+- `google-api-python-client` - YouTube API client
+
+## 📝 Notes
+
+- The bot automatically syncs slash commands on startup
+- Opus library is required for voice support (auto-loaded)
+- SQLite database is created automatically on first run
+- Playlist support can be disabled per server for performance
+
+## 🐛 Troubleshooting
+
+**Bot doesn't join voice channel:**
+- Ensure FFmpeg is properly installed
+- Check that Opus library is loaded (console output)
+
+**Recommendations not working:**
+- Verify YouTube API key is set in `.env`
+- Check API quota limits
+
+**Commands not appearing:**
+- Wait a few minutes for Discord to sync commands
+- Try removing and re-inviting the bot
+
+## 📄 License
+
+This project is open source and available under the MIT License.
+
+## 🤝 Contributing
+
+Contributions, issues, and feature requests are welcome!
+
+## 👤 Author
+
+BillCipherrr
+
+---
+
+Made with ❤️ using discord.py

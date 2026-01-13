@@ -101,3 +101,23 @@ def get_server_history(guild_id: int, limit: int = 10) -> list:
     history = cursor.fetchall()
     conn.close()
     return history
+
+
+def get_recent_songs(guild_id: int, limit: int = 20) -> list:
+    """取得伺服器最近播過的歌曲 (含 url 與 title)，用於推薦去重。"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        '''
+        SELECT s.youtube_url, s.title
+        FROM play_history h
+        JOIN songs s ON h.song_id = s.song_id
+        WHERE h.guild_id = ?
+        ORDER BY h.played_at DESC
+        LIMIT ?
+        ''',
+        (guild_id, limit)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
