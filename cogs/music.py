@@ -94,7 +94,87 @@ class MusicCog(commands.Cog):
         self.volumes = {}
         self.disconnect_timers = {}
         self.playlist_enabled = {}
+        self.voice_locks = {}  # per-guild 語音連線鎖，防止競態
         self.logger = logging.getLogger(__name__)
+
+    def _get_voice_lock(self, guild_id: int) -> asyncio.Lock:
+        """取得或建立 per-guild 的語音連線鎖。"""
+        if guild_id not in self.voice_locks:
+            self.voice_locks[guild_id] = asyncio.Lock()
+        return self.voice_locks[guild_id]
+
+    async def ensure_voice_connection(self, channel: discord.VoiceChannel) -> discord.VoiceClient:
+        """安全地連接到語音頻道，處理 stale client、4017、timeout 等情況。
+
+        回傳 VoiceClient，連線失敗時拋出 RuntimeError 並附帶使用者可讀訊息。
+        """
+        guild = channel.guild
+        lock = self._get_voice_lock(guild.id)
+
+        async with lock:
+            vc = guild.voice_client
+
+            # 1) 已連上同一頻道 → 直接重用
+            if vc and vc.is_connected() and vc.channel and vc.channel.id == channel.id:
+                return vc
+
+            # 2) 已連上不同頻道 → 移動
+            if vc and vc.is_connected() and vc.channel and vc.channel.id != channel.id:
+                try:
+                    await vc.move_to(channel)
+                    return vc
+                except Exception:
+                    pass  # 移動失敗就走下面的清理流程
+
+            # 3) 存在但狀態異常（半殘留） → 強制斷開再重連
+            if vc:
+                try:
+                    await vc.disconnect(force=True)
+                except Exception:
+                    pass
+                await asyncio.sleep(0.5)
+
+            # 4) 嘗試連線（最多 2 次）
+            last_error = None
+            for attempt in range(2):
+                try:
+                    vc = await channel.connect(timeout=30.0, reconnect=True)
+                    return vc
+                except asyncio.TimeoutError:
+                    last_error = "語音連線逾時，請稍後再試。"
+                    self.logger.warning("Voice connect timeout (attempt %d) for guild %s", attempt + 1, guild.id)
+                except discord.errors.ConnectionClosed as e:
+                    code = getattr(e, 'code', None)
+                    if code == 4017:
+                        raise RuntimeError(
+                            "⚠️ 語音連線失敗 (close code 4017)：Discord 要求端對端加密 (DAVE) 語音協定，"
+                            "但目前使用的 discord.py 版本尚未支援。\n"
+                            "請嘗試：\n"
+                            "1. 升級 discord.py 至最新版本：`pip install -U discord.py[voice]`\n"
+                            "2. 若仍無法解決，可改用支援 DAVE 協定的分支（如 py-cord）。\n"
+                            "3. 或者在 Discord 伺服器設定中，暫時關閉語音頻道的端對端加密要求。"
+                        )
+                    last_error = f"語音連線被關閉 (code {code})，請稍後再試。"
+                    self.logger.warning("Voice connect closed with code %s (attempt %d)", code, attempt + 1)
+                except discord.ClientException as e:
+                    last_error = f"語音連線錯誤：{e}"
+                    self.logger.warning("Voice ClientException (attempt %d): %s", attempt + 1, e)
+                except Exception as e:
+                    last_error = f"語音連線發生未預期錯誤：{e}"
+                    self.logger.error("Unexpected voice connect error (attempt %d)", attempt + 1, exc_info=e)
+
+                # 連線失敗後清理可能殘留的 voice client
+                stale_vc = guild.voice_client
+                if stale_vc:
+                    try:
+                        await stale_vc.disconnect(force=True)
+                    except Exception:
+                        pass
+
+                if attempt < 1:
+                    await asyncio.sleep(1.5)
+
+            raise RuntimeError(f"❌ 無法加入語音頻道：{last_error}")
 
     # --- 輔助函式 ---
     def get_queue(self, guild_id: int) -> deque: return self.queues.setdefault(guild_id, deque())
@@ -178,6 +258,26 @@ class MusicCog(commands.Cog):
         guild_id = interaction.guild.id
         self.stop_progress_task(guild_id)
         voice_client = interaction.guild.voice_client
+
+        # 防護：voice_client 已斷開或不存在
+        if not voice_client or not voice_client.is_connected():
+            self.logger.warning("play_next: voice_client 不存在或已斷開 (guild %s)，嘗試重新連線", guild_id)
+            # 嘗試重新連線到使用者所在的頻道
+            try:
+                # 從 interaction 嘗試取得頻道資訊
+                member = interaction.guild.get_member(interaction.user.id) if interaction.user else None
+                channel = member.voice.channel if member and member.voice else None
+                if channel:
+                    voice_client = await self.ensure_voice_connection(channel)
+                else:
+                    await interaction.channel.send("⚠️ 語音連線已中斷，且找不到可重新連線的頻道。")
+                    self.set_current_song(guild_id, None)
+                    return
+            except RuntimeError as e:
+                await interaction.channel.send(str(e))
+                self.set_current_song(guild_id, None)
+                return
+
         queue = self.get_queue(guild_id)
         loop_mode = self.get_loop_mode(guild_id)
         current_song = self.get_current_song(guild_id)
@@ -335,8 +435,13 @@ class MusicCog(commands.Cog):
             return await interaction.response.send_message("您需要先加入一個語音頻道！", ephemeral=True)
         
         await interaction.response.defer()
-        voice_client = interaction.guild.voice_client or await interaction.user.voice.channel.connect()
-        
+
+        # 使用安全的語音連線流程
+        try:
+            voice_client = await self.ensure_voice_connection(interaction.user.voice.channel)
+        except RuntimeError as e:
+            return await interaction.followup.send(str(e), ephemeral=True)
+
         try:
             # 使用 YDL_OPTS_INFO_EXTRACT 快速掃描，允許播放列表
             with yt_dlp.YoutubeDL(YDL_OPTS_INFO_EXTRACT) as ydl:
@@ -394,8 +499,15 @@ class MusicCog(commands.Cog):
             self.get_queue(guild_id).clear()
             self.set_current_song(guild_id, None)
             self.set_loop_mode(guild_id, LoopMode.NONE)
-            if voice_client.is_playing() or voice_client.is_paused(): voice_client.stop()
-            await voice_client.disconnect()
+            try:
+                if voice_client.is_playing() or voice_client.is_paused():
+                    voice_client.stop()
+            except Exception:
+                pass
+            try:
+                await voice_client.disconnect(force=True)
+            except Exception:
+                pass
             player_message = self.get_player_message(guild_id)
             if player_message: 
                 try: await player_message.delete()
