@@ -103,6 +103,48 @@ def get_server_history(guild_id: int, limit: int = 10) -> list:
     return history
 
 
+def get_user_top_songs(user_id: int, guild_id: int, limit: int = 20) -> list:
+    """取得指定用戶在此伺服器播放次數最多的歌曲。"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        '''
+        SELECT s.youtube_url, s.title, COUNT(h.song_id) as play_count
+        FROM play_history h
+        JOIN songs s ON h.song_id = s.song_id
+        WHERE h.user_id = ? AND h.guild_id = ?
+        GROUP BY h.song_id
+        ORDER BY play_count DESC
+        LIMIT ?
+        ''',
+        (user_id, guild_id, limit)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+
+def get_guild_top_songs(guild_id: int, limit: int = 20) -> list:
+    """取得伺服器整體播放次數最多的歌曲。"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        '''
+        SELECT s.youtube_url, s.title, COUNT(h.song_id) as play_count
+        FROM play_history h
+        JOIN songs s ON h.song_id = s.song_id
+        WHERE h.guild_id = ?
+        GROUP BY h.song_id
+        ORDER BY play_count DESC
+        LIMIT ?
+        ''',
+        (guild_id, limit)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+
 def get_recent_songs(guild_id: int, limit: int = 20) -> list:
     """取得伺服器最近播過的歌曲 (含 url 與 title)，用於推薦去重。"""
     conn = get_db_connection()

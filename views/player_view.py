@@ -132,10 +132,10 @@ class PlayerView(discord.ui.View):
 
     @discord.ui.button(emoji="💡", label="Recommend", style=discord.ButtonStyle.secondary)
     async def recommend_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()  # 必須在任何 async 工作前先 defer，避免 3 秒逾時
         self.music_cog.toggle_loop_mode(interaction.guild.id, LoopMode.RECOMMEND)
         await self.music_cog.ensure_recommendation_seed(interaction)
         await self.update_player(self.music_cog.get_current_position(interaction.guild.id))
-        await interaction.response.defer()
 
     @discord.ui.button(emoji="⏹️", label="Stop", style=discord.ButtonStyle.danger)
     async def stop_button(self, interaction: discord.Interaction, button: discord.ui.Button):

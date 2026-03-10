@@ -366,8 +366,52 @@ class MusicCog(commands.Cog):
 
     # --- 推薦功能 ---
     async def get_recommendation(self, song_info: dict, requester: discord.User):
+        guild_id = requester.guild.id
+
+        # --- 建立去重集合（佇列中 + 目前播放 + 最近 20 首）---
+        played_ids = {
+            extract_video_id(s.get('url', '') or s.get('webpage_url', ''))
+            for s in self.get_queue(guild_id)
+        }
+        current = self.get_current_song(guild_id)
+        if current:
+            played_ids.add(extract_video_id(current.get('url', '') or current.get('webpage_url', '')))
+        recent_rows = database.get_recent_songs(guild_id, limit=20)
+        played_ids.update(extract_video_id(r['youtube_url']) for r in recent_rows if r)
+        played_titles = {normalize_title_for_dedup(r['title']) for r in recent_rows if r and r['title']}
+        played_ids.discard(None)
+
+        def is_duplicate(url, title):
+            vid = extract_video_id(url)
+            return vid in played_ids or normalize_title_for_dedup(title) in played_titles
+
+        # --- 階段 1：從用戶個人偏好挑選 ---
+        user_top = database.get_user_top_songs(requester.id, guild_id, limit=20)
+        user_candidates = [r for r in user_top if not is_duplicate(r['youtube_url'], r['title'])]
+        if user_candidates:
+            chosen = random.choice(user_candidates[:5])
+            return {
+                'url': chosen['youtube_url'],
+                'title': chosen['title'],
+                'requester': self.bot.user,
+                '_rec_source': 'user_history'
+            }
+
+        # --- 階段 2：從伺服器熱門挑選 ---
+        guild_top = database.get_guild_top_songs(guild_id, limit=20)
+        guild_candidates = [r for r in guild_top if not is_duplicate(r['youtube_url'], r['title'])]
+        if guild_candidates:
+            chosen = random.choice(guild_candidates[:5])
+            return {
+                'url': chosen['youtube_url'],
+                'title': chosen['title'],
+                'requester': self.bot.user,
+                '_rec_source': 'guild_top'
+            }
+
+        # --- 階段 3：fallback 到 YouTube API ---
         if not youtube:
-            raise Exception("YouTube API 未正確初始化，無法使用推薦功能。")
+            raise Exception("歷史記錄不足且 YouTube API 未初始化，無法推薦歌曲。")
 
         video_id = extract_video_id(song_info.get('url', '') or song_info.get('webpage_url', ''))
         if not video_id:
@@ -378,64 +422,46 @@ class MusicCog(commands.Cog):
         def run_search(params):
             return youtube.search().list(**params).execute()
 
-        params_related = {
+        # relatedToVideoId 自 2023/8 已廢棄，直接改用歌曲標題做關鍵字搜尋
+        fallback_query = song_info.get('title') or song_info.get('uploader') or ''
+        params_search = {
             'part': 'snippet',
             'type': 'video',
-            'relatedToVideoId': video_id,
+            'q': fallback_query,
             'maxResults': 10,
             'videoCategoryId': '10',
             'order': 'relevance',
             'safeSearch': 'none'
         }
-
-        # 部分舊版 google-api-python-client 可能不支援 relatedToVideoId，失敗時改用關鍵字搜尋回退。
-        try:
-            search_response = await loop.run_in_executor(None, lambda: run_search(params_related))
-        except TypeError:
-            fallback_query = song_info.get('title') or song_info.get('uploader') or ''
-            params_fallback = {
-                'part': 'snippet',
-                'type': 'video',
-                'q': fallback_query,
-                'maxResults': 10,
-                'videoCategoryId': '10',
-                'order': 'relevance',
-                'safeSearch': 'none'
-            }
-            search_response = await loop.run_in_executor(None, lambda: run_search(params_fallback))
-
-        played_ids = {
-            extract_video_id(s.get('url', '') or s.get('webpage_url', ''))
-            for s in self.get_queue(requester.guild.id)
-        }
-        current = self.get_current_song(requester.guild.id)
-        if current:
-            played_ids.add(extract_video_id(current.get('url', '') or current.get('webpage_url', '')))
-
-        # 累積最近播過的歌曲 (含重新上傳的可能) 以避免推薦重複
-        recent_rows = database.get_recent_songs(requester.guild.id, limit=20)
-        played_ids.update(extract_video_id(r['youtube_url']) for r in recent_rows if r)
-        played_titles = {normalize_title_for_dedup(r['title']) for r in recent_rows if r and r['title']}
+        search_response = await loop.run_in_executor(None, lambda: run_search(params_search))
 
         def to_video_id(item):
             return item['id']['videoId']
 
-        candidates = []
+        yt_candidates = []
+        yt_candidates_relaxed = []  # 只排 video_id，不排標題
         for item in search_response.get('items', []):
             vid = to_video_id(item)
             title_norm = normalize_title_for_dedup(item['snippet']['title'])
-            if vid in played_ids: continue
-            if title_norm in played_titles: continue
-            candidates.append(item)
-        if not candidates:
+            if vid in played_ids:
+                continue
+            yt_candidates_relaxed.append(item)
+            if title_norm in played_titles:
+                continue
+            yt_candidates.append(item)
+
+        # 嚴格去重有候選就用，否則放寬為只排 video_id
+        chosen_list = yt_candidates if yt_candidates else yt_candidates_relaxed
+        if not chosen_list:
             raise Exception("找不到可推薦的歌曲。")
 
-        chosen = candidates[0]  # 取最相關的第一首（若想要隨機，可改為 random.choice(candidates[:3]))
+        chosen = chosen_list[0]
         vid = to_video_id(chosen)
         return {
             'url': f"https://www.youtube.com/watch?v={vid}",
             'title': chosen['snippet']['title'],
-            'requester': self.bot.user
+            'requester': self.bot.user,
+            '_rec_source': 'youtube_api'
         }
 
     # --- /play 指令 (已修正) ---
