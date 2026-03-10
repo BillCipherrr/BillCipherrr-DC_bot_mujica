@@ -95,6 +95,7 @@ class MusicCog(commands.Cog):
         self.disconnect_timers = {}
         self.playlist_enabled = {}
         self.voice_locks = {}  # per-guild 語音連線鎖，防止競態
+        self.session_songs = {}  # 記錄本次 session 播放的歌曲
         self.logger = logging.getLogger(__name__)
 
     def _get_voice_lock(self, guild_id: int) -> asyncio.Lock:
@@ -338,15 +339,24 @@ class MusicCog(commands.Cog):
             voice_client.play(volume_source, after=after_playing)
 
             database.log_song_play(guild_id, next_song['requester'].id, next_song)
+            self.session_songs.setdefault(guild_id, []).append({
+                'title': next_song['title'],
+                'url': next_song['url'],
+                'requester': next_song['requester'],
+            })
 
             view = PlayerView(self, interaction)
             self.set_player_view(guild_id, view)
             embed = view.create_embed(next_song)
-            player_message = self.get_player_message(guild_id)
-            if player_message: await player_message.edit(content=None, embed=embed, view=view)
-            else: 
-                player_message = await interaction.channel.send(embed=embed, view=view)
-                self.set_player_message(guild_id, player_message)
+            # 刪掉舊訊息並重新發送，確保 player embed 永遠在最底部
+            old_message = self.get_player_message(guild_id)
+            if old_message:
+                try:
+                    await old_message.delete()
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+            player_message = await interaction.channel.send(embed=embed, view=view)
+            self.set_player_message(guild_id, player_message)
             self.start_progress_task(guild_id)
 
         except Exception as e:
@@ -434,7 +444,7 @@ class MusicCog(commands.Cog):
         if not interaction.user.voice:
             return await interaction.response.send_message("您需要先加入一個語音頻道！", ephemeral=True)
         
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
 
         # 使用安全的語音連線流程
         try:
@@ -457,7 +467,7 @@ class MusicCog(commands.Cog):
                     return await interaction.followup.send("❌ 此伺服器目前不允許播放列表。請聯絡管理員使用 `/settings` 來啟用。", ephemeral=True)
                 
                 entries = info['entries']
-                await interaction.followup.send(f"✅ 已將播放列表 **{info['title']}** ({len(entries)} 首歌) 加入佇列。")
+                await interaction.followup.send(f"✅ 已將播放列表 **{info['title']}** ({len(entries)} 首歌) 加入佇列。", ephemeral=True)
                 for entry in entries:
                     if not entry: continue
                     entry_url = entry.get('webpage_url') or entry.get('url')
@@ -476,7 +486,7 @@ class MusicCog(commands.Cog):
                     'requester': interaction.user
                 }
                 queue.append(song_info)
-                await interaction.followup.send(f"✅ 已將 **{song_info['title']}** 加入佇列。")
+                await interaction.followup.send(f"✅ 已將 **{song_info['title']}** 加入佇列。", ephemeral=True)
             
             if not is_playing:
                 self.cancel_disconnect_timer(interaction.guild.id)
@@ -488,6 +498,28 @@ class MusicCog(commands.Cog):
         except Exception as e:
             self.logger.error("play command error", exc_info=e)
             await interaction.followup.send(f"處理歌曲時發生錯誤: {e}")
+
+    # --- 本次 session 播放摘要 ---
+    async def _send_session_summary(self, channel: discord.TextChannel, guild_id: int):
+        songs = self.session_songs.pop(guild_id, [])
+        if not songs:
+            return
+        lines = []
+        for i, song in enumerate(songs[:20], 1):
+            vid = extract_video_id(song['url'])
+            link = f"https://youtu.be/{vid}" if vid else song['url']
+            requester = song['requester']
+            requester_str = requester.mention if isinstance(requester, (discord.Member, discord.User)) else str(requester)
+            lines.append(f"`{i}.` [{song['title']}]({link}) — {requester_str}")
+        if len(songs) > 20:
+            lines.append(f"*...還有 {len(songs) - 20} 首未顯示*")
+        embed = discord.Embed(
+            title=f"🎵 本次播放摘要（共 {len(songs)} 首）",
+            description="\n".join(lines),
+            color=discord.Color.blurple(),
+        )
+        embed.set_footer(text="點擊歌曲名稱或複製連結即可再次播放")
+        await channel.send(embed=embed)
 
     # --- 其他指令 ---
     async def stop_and_leave(self, interaction: discord.Interaction):
@@ -504,20 +536,76 @@ class MusicCog(commands.Cog):
                     voice_client.stop()
             except Exception:
                 pass
+            player_message = self.get_player_message(guild_id)
+            if player_message:
+                try: await player_message.delete()
+                except discord.NotFound: pass
+            self.set_player_message(guild_id, None)
+            await self._send_session_summary(interaction.channel, guild_id)
             try:
                 await voice_client.disconnect(force=True)
             except Exception:
                 pass
-            player_message = self.get_player_message(guild_id)
-            if player_message: 
-                try: await player_message.delete()
-                except discord.NotFound: pass
-            self.set_player_message(guild_id, None)
 
     @app_commands.command(name="leave", description="讓機器人離開語音頻道並清空佇列")
     async def leave(self, interaction: discord.Interaction):
         await self.stop_and_leave(interaction)
-        await interaction.response.send_message("👋 已離開頻道並清空佇列。")
+        await interaction.response.send_message("👋 已離開頻道並清空佇列。", ephemeral=True)
+
+    @app_commands.command(name="sites", description="查看本機器人支援的影音平台")
+    async def sites(self, interaction: discord.Interaction):
+        embed = discord.Embed(
+            title="🌐 支援的影音平台",
+            description="本機器人使用 **yt-dlp**，理論上支援 **1,800+** 個網站。\n以下列出常用平台，直接將網址貼給 `/play` 即可使用。",
+            color=discord.Color.blue(),
+        )
+        embed.add_field(
+            name="🎬 影片平台",
+            value=(
+                "• [YouTube](https://youtube.com)\n"
+                "• [YouTube Music](https://music.youtube.com)\n"
+                "• [Vimeo](https://vimeo.com)\n"
+                "• [Bilibili](https://bilibili.com)\n"
+                "• [NicoNico](https://nicovideo.jp)\n"
+                "• [TikTok](https://tiktok.com)\n"
+                "• [Twitter/X](https://x.com)\n"
+                "• [Instagram](https://instagram.com)"
+            ),
+            inline=True,
+        )
+        embed.add_field(
+            name="🎵 音樂平台",
+            value=(
+                "• [SoundCloud](https://soundcloud.com)\n"
+                "• [Bandcamp](https://bandcamp.com)\n"
+                "• [Mixcloud](https://mixcloud.com)\n"
+                "• [Audiomack](https://audiomack.com)\n"
+                "• [Beatport](https://beatport.com)\n"
+                "• [NetEase Music](https://music.163.com)\n"
+                "• [QQ Music](https://y.qq.com)\n"
+                "• [Yandex Music](https://music.yandex.com)"
+            ),
+            inline=True,
+        )
+        embed.add_field(
+            name="📻 廣播 / Podcast",
+            value=(
+                "• [iHeartRadio](https://iheart.com)\n"
+                "• [Apple Podcasts](https://podcasts.apple.com)\n"
+                "• [ZingMP3](https://zingmp3.vn)"
+            ),
+            inline=True,
+        )
+        embed.add_field(
+            name="⚠️ 注意事項",
+            value=(
+                "• **Spotify** 本身不提供音訊串流，無法直接播放\n"
+                "• 部分平台需登入或有地區限制\n"
+                "• 完整支援列表：[yt-dlp supported sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md)"
+            ),
+            inline=False,
+        )
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="settings", description="[管理員] 開啟機器人設定面板")
     @app_commands.checks.has_permissions(manage_guild=True)

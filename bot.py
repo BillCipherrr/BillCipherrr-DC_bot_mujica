@@ -24,16 +24,22 @@ logging.basicConfig(level=logging.INFO)
 # --- 確保 Opus 已載入 ---
 # 某些系統不會自動找到 libopus，手動指定共享庫名稱避免語音連線立即斷線
 if not discord.opus.is_loaded():
-    try:
-        discord.opus.load_opus('libopus.so.0')
-        print("Opus loaded with libopus.so.0")
-    except OSError:
-        # 後備名稱，有些發行版可能不同
+    _opus_candidates = [
+        'libopus.so.0',          # Ubuntu/Debian
+        'libopus.so.1',          # 部分 Linux 發行版
+        '/opt/homebrew/lib/libopus.dylib',   # macOS Apple Silicon (Homebrew)
+        '/usr/local/lib/libopus.dylib',      # macOS Intel (Homebrew)
+        'opus',
+    ]
+    for _lib in _opus_candidates:
         try:
-            discord.opus.load_opus('opus')
-            print("Opus loaded with opus")
-        except Exception as e:
-            print(f"警告：無法載入 Opus，語音功能將失敗：{e}")
+            discord.opus.load_opus(_lib)
+            print(f"Opus loaded with {_lib}")
+            break
+        except OSError:
+            continue
+    else:
+        print("警告：無法載入 Opus，語音功能將失敗")
 else:
     print("Opus already loaded")
 
