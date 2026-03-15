@@ -96,7 +96,19 @@ class MusicCog(commands.Cog):
         self.playlist_enabled = {}
         self.voice_locks = {}  # per-guild 語音連線鎖，防止競態
         self.session_songs = {}  # 記錄本次 session 播放的歌曲
+        self.debug_modes = {}
+        self.global_debug_default = os.getenv("MUSIC_DEBUG", "false").lower() in ("1", "true", "yes", "on")
         self.logger = logging.getLogger(__name__)
+
+    def is_debug_enabled(self, guild_id: int) -> bool:
+        return self.debug_modes.get(guild_id, self.global_debug_default)
+
+    def set_debug_mode(self, guild_id: int, enabled: bool):
+        self.debug_modes[guild_id] = enabled
+
+    def debug_log(self, guild_id: int, message: str, *args):
+        if self.is_debug_enabled(guild_id):
+            self.logger.info("[MUSIC_DEBUG][Guild %s] " + message, guild_id, *args)
 
     def _get_voice_lock(self, guild_id: int) -> asyncio.Lock:
         """取得或建立 per-guild 的語音連線鎖。"""
@@ -213,9 +225,13 @@ class MusicCog(commands.Cog):
     def get_current_position(self, guild_id: int) -> float:
         vc = self.bot.get_guild(guild_id).voice_client
         song = self.get_current_song(guild_id)
-        if not vc or not vc.is_playing() or not song: return 0
-        if vc.is_paused(): return song.get('paused_position', 0)
-        return (time.time() - song.get('start_time', 0)) + song.get('resume_offset', 0)
+        if not vc or not song:
+            return 0
+        if vc.is_paused():
+            return song.get('paused_position', song.get('resume_offset', 0))
+        if vc.is_playing():
+            return (time.time() - song.get('start_time', 0)) + song.get('resume_offset', 0)
+        return song.get('resume_offset', 0)
 
     def start_progress_task(self, guild_id: int):
         if guild_id in self.progress_tasks and self.progress_tasks[guild_id].is_running(): return
@@ -259,6 +275,7 @@ class MusicCog(commands.Cog):
         guild_id = interaction.guild.id
         self.stop_progress_task(guild_id)
         voice_client = interaction.guild.voice_client
+        self.debug_log(guild_id, "play_next called: queue=%d loop_mode=%s has_current=%s", len(self.get_queue(guild_id)), self.get_loop_mode(guild_id).name, bool(self.get_current_song(guild_id)))
 
         # 防護：voice_client 已斷開或不存在
         if not voice_client or not voice_client.is_connected():
@@ -301,14 +318,13 @@ class MusicCog(commands.Cog):
             player_message = self.get_player_message(guild_id)
             if player_message: await player_message.edit(content="播放佇列已結束。", embed=None, view=None)
             self.set_player_message(guild_id, None)
+            self.debug_log(guild_id, "queue ended naturally; sending session summary")
+            if interaction.channel:
+                await self._send_session_summary(interaction.channel, guild_id)
             await self.start_disconnect_timer(interaction)
             return
 
-        if loop_mode == LoopMode.SHUFFLE and len(queue) > 1:
-            next_song_index = random.randint(0, len(queue) - 1)
-            next_song = queue.pop(next_song_index)
-        else:
-            next_song = queue.popleft()
+        next_song = queue.popleft()
 
         self.set_current_song(guild_id, next_song)
 
@@ -333,7 +349,10 @@ class MusicCog(commands.Cog):
             volume_source = discord.PCMVolumeTransformer(source, volume=self.get_volume(guild_id))
             
             def after_playing(error):
-                if error: print(f'Player error: {error}')
+                if error:
+                    self.logger.error("[Guild %s] Player after callback error: %s", guild_id, error)
+                else:
+                    self.debug_log(guild_id, "after callback fired without error")
                 asyncio.run_coroutine_threadsafe(self.play_next(interaction), self.bot.loop)
 
             voice_client.play(volume_source, after=after_playing)
@@ -553,6 +572,7 @@ class MusicCog(commands.Cog):
         self.cancel_disconnect_timer(guild_id)
         self.stop_progress_task(guild_id)
         voice_client = interaction.guild.voice_client
+        self.debug_log(guild_id, "stop_and_leave invoked")
         if voice_client:
             self.get_queue(guild_id).clear()
             self.set_current_song(guild_id, None)
@@ -572,6 +592,22 @@ class MusicCog(commands.Cog):
                 await voice_client.disconnect(force=True)
             except Exception:
                 pass
+
+    @app_commands.command(name="music_debug", description="[管理員] 切換音樂系統除錯日誌模式")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def music_debug(self, interaction: discord.Interaction, enabled: bool):
+        self.set_debug_mode(interaction.guild.id, enabled)
+        await interaction.response.send_message(
+            f"🪵 音樂除錯日誌已{'開啟' if enabled else '關閉'}。",
+            ephemeral=True
+        )
+
+    @music_debug.error
+    async def music_debug_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        if isinstance(error, app_commands.MissingPermissions):
+            await interaction.response.send_message("❌ 您需要擁有「管理伺服器」權限。", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"發生未知錯誤: {error}", ephemeral=True)
 
     @app_commands.command(name="leave", description="讓機器人離開語音頻道並清空佇列")
     async def leave(self, interaction: discord.Interaction):

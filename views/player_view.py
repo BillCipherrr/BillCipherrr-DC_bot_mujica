@@ -1,5 +1,6 @@
 import discord
 import time
+import random
 from enum import Enum
 
 # 定義播放模式的 Enum
@@ -97,13 +98,26 @@ class PlayerView(discord.ui.View):
     @discord.ui.button(emoji="⏯️", label="Pause", style=discord.ButtonStyle.secondary)
     async def pause_resume_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         vc = interaction.guild.voice_client
+        guild_id = interaction.guild.id
+        current_song = self.music_cog.get_current_song(guild_id)
+
         if vc and vc.is_playing():
+            if current_song:
+                current_song['paused_position'] = self.music_cog.get_current_position(guild_id)
+                self.music_cog.debug_log(guild_id, "pause pressed at position=%.2f", current_song['paused_position'])
             vc.pause()
             await self.music_cog.start_disconnect_timer(interaction)
         elif vc and vc.is_paused():
+            if current_song:
+                paused_position = current_song.get('paused_position', current_song.get('resume_offset', 0))
+                current_song['resume_offset'] = paused_position
+                current_song['start_time'] = time.time()
+                current_song.pop('paused_position', None)
+                self.music_cog.debug_log(guild_id, "resume pressed from position=%.2f", paused_position)
             vc.resume()
-            self.music_cog.cancel_disconnect_timer(interaction.guild.id)
-        await self.update_player(self.music_cog.get_current_position(interaction.guild.id))
+            self.music_cog.cancel_disconnect_timer(guild_id)
+
+        await self.update_player(self.music_cog.get_current_position(guild_id))
         await interaction.response.defer()
 
     @discord.ui.button(emoji="⏭️", label="Skip", style=discord.ButtonStyle.secondary)
@@ -126,9 +140,24 @@ class PlayerView(discord.ui.View):
 
     @discord.ui.button(emoji="🔀", label="Shuffle", style=discord.ButtonStyle.secondary)
     async def shuffle_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.music_cog.toggle_loop_mode(interaction.guild.id, LoopMode.SHUFFLE)
-        await self.update_player(self.music_cog.get_current_position(interaction.guild.id))
         await interaction.response.defer()
+        guild_id = interaction.guild.id
+        self.music_cog.toggle_loop_mode(guild_id, LoopMode.SHUFFLE)
+
+        if self.music_cog.get_loop_mode(guild_id) == LoopMode.SHUFFLE:
+            queue = self.music_cog.get_queue(guild_id)
+            if len(queue) > 1:
+                shuffled = list(queue)
+                random.shuffle(shuffled)
+                queue.clear()
+                queue.extend(shuffled)
+                self.music_cog.debug_log(guild_id, "shuffle button reshuffled queue_len=%d", len(queue))
+            else:
+                self.music_cog.debug_log(guild_id, "shuffle enabled but queue_len=%d; no reshuffle", len(queue))
+        else:
+            self.music_cog.debug_log(guild_id, "shuffle disabled")
+
+        await self.update_player(self.music_cog.get_current_position(interaction.guild.id))
 
     @discord.ui.button(emoji="💡", label="Recommend", style=discord.ButtonStyle.secondary)
     async def recommend_button(self, interaction: discord.Interaction, button: discord.ui.Button):
