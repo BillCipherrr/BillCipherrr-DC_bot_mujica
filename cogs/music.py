@@ -8,6 +8,7 @@ import random
 import time
 import logging
 import traceback
+import shlex
 from collections import deque
 from urllib.parse import urlparse, parse_qs, urlencode
 
@@ -47,11 +48,48 @@ YDL_OPTS_STREAM = {
     'source_address': '0.0.0.0'
 }
 
+# 允許透過環境變數提供 cookies，處理需登入/受限資源（例如部份 Google Drive 連結）
+YTDLP_COOKIEFILE = os.getenv("YTDLP_COOKIEFILE")
+if YTDLP_COOKIEFILE:
+    YDL_OPTS_STREAM['cookiefile'] = YTDLP_COOKIEFILE
+
 # FFmpeg 選項
 FFMPEG_OPTIONS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
     'options': '-vn',
 }
+
+
+def build_ffmpeg_options(song_data: dict) -> dict:
+    """根據 yt-dlp 回傳的 http_headers 建立 ffmpeg 參數，降低 403 機率。"""
+    opts = dict(FFMPEG_OPTIONS)
+    before = opts.get('before_options', '')
+    extra_parts = [
+        '-reconnect_at_eof 1',
+        '-reconnect_on_http_error 4xx,5xx',
+    ]
+
+    headers = song_data.get('http_headers') or {}
+    user_agent = headers.get('User-Agent') or headers.get('user-agent')
+    if user_agent:
+        extra_parts.append(f"-user_agent {shlex.quote(str(user_agent))}")
+
+    header_lines = []
+    for k, v in headers.items():
+        if not v:
+            continue
+        lk = k.lower()
+        if lk in ('user-agent', 'accept-encoding'):
+            continue
+        header_lines.append(f"{k}: {v}")
+
+    if header_lines:
+        escaped_headers = '\\r\\n'.join(header_lines) + '\\r\\n'
+        extra_parts.append(f"-headers {shlex.quote(escaped_headers)}")
+
+    merged_before = ' '.join(part for part in [before.strip(), ' '.join(extra_parts).strip()] if part).strip()
+    opts['before_options'] = merged_before
+    return opts
 
 def normalize_youtube_url(url: str) -> str:
     # 解析網址
@@ -341,11 +379,13 @@ class MusicCog(commands.Cog):
             next_song['thumbnail'] = song_data.get('thumbnail')
             next_song['uploader'] = song_data.get('uploader', '未知作者')
             next_song['view_count'] = song_data.get('view_count', 0)
+            next_song['http_headers'] = song_data.get('http_headers', {})
             
             next_song['start_time'] = time.time()
             next_song['resume_offset'] = 0
 
-            source = discord.FFmpegPCMAudio(next_song['stream_url'], **FFMPEG_OPTIONS)
+            ffmpeg_options = build_ffmpeg_options(next_song)
+            source = discord.FFmpegPCMAudio(next_song['stream_url'], **ffmpeg_options)
             volume_source = discord.PCMVolumeTransformer(source, volume=self.get_volume(guild_id))
             
             def after_playing(error):
@@ -380,7 +420,13 @@ class MusicCog(commands.Cog):
 
         except Exception as e:
             self.logger.error("play_next error for %s", next_song.get('title'), exc_info=e)
-            await interaction.channel.send(f"播放 **{next_song['title']}** 時發生錯誤: {e}")
+            err_msg = str(e)
+            if '403' in err_msg or 'Forbidden' in err_msg:
+                err_msg += (
+                    "\n可能原因：來源要求登入憑證或特定請求標頭。"
+                    "\n可嘗試設定環境變數 YTDLP_COOKIEFILE 指向瀏覽器匯出的 cookies.txt。"
+                )
+            await interaction.channel.send(f"播放 **{next_song['title']}** 時發生錯誤: {err_msg}")
             asyncio.run_coroutine_threadsafe(self.play_next(interaction), self.bot.loop)
 
     # --- 推薦功能 ---
