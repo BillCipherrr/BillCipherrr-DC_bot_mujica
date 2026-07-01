@@ -3,9 +3,12 @@ import discord
 from discord.ext import commands
 import asyncio
 import os
+import socket
 import database
 from dotenv import load_dotenv
 import logging
+import aiohttp
+from aiohttp import client_exceptions
 
 # 載入 .env 檔案中的環境變數
 load_dotenv()
@@ -44,22 +47,28 @@ else:
     print("Opus already loaded")
 
 # --- Bot 初始化 ---
-bot = commands.Bot(command_prefix='/', intents=INTENTS)
+def create_bot() -> commands.Bot:
+    """建立並回傳新的 Bot 實例。"""
+    connector = aiohttp.TCPConnector(family=socket.AF_INET, ttl_dns_cache=300)
+    bot = commands.Bot(command_prefix='/', intents=INTENTS, connector=connector)
 
-@bot.event
-async def on_ready():
-    """當機器人準備好時執行的事件"""
-    print(f'Logged in as {bot.user.name}')
-    print(f'Bot ID: {bot.user.id}')
-    print('------')
-    # 同步斜線指令
-    try:
-        synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} command(s)")
-    except Exception as e:
-        print(f"Failed to sync commands: {e}")
+    @bot.event
+    async def on_ready():
+        """當機器人準備好時執行的事件"""
+        print(f'Logged in as {bot.user.name}')
+        print(f'Bot ID: {bot.user.id}')
+        print('------')
+        # 同步斜線指令
+        try:
+            synced = await bot.tree.sync()
+            print(f"Synced {len(synced)} command(s)")
+        except Exception as e:
+            print(f"Failed to sync commands: {e}")
 
-async def load_cogs():
+    return bot
+
+
+async def load_cogs(bot: commands.Bot):
     """載入所有在 cogs 資料夾中的模組"""
     for filename in os.listdir('./cogs'):
         if filename.endswith('.py'):
@@ -69,13 +78,45 @@ async def load_cogs():
             except Exception as e:
                 print(f'Failed to load cog {filename}: {e}')
 
+
+def _retry_delay(attempt: int) -> int:
+    """根據重試次數計算延遲秒數（上限 60 秒）。"""
+    return min(60, 2 ** min(attempt, 6))
+
+
+async def start_bot_with_retry():
+    """以手動重試方式啟動 Bot，避免網路逾時時直接崩潰。"""
+    attempt = 0
+    while True:
+        bot = create_bot()
+        try:
+            async with bot:
+                await load_cogs(bot)
+                # 關閉 discord.py 內建重連流程，避免極端網路狀況下觸發 ws 為 None 的已知崩潰路徑
+                await bot.start(TOKEN, reconnect=False)
+                return
+        except (client_exceptions.ClientError, asyncio.TimeoutError, discord.GatewayNotFound) as e:
+            attempt += 1
+            delay = _retry_delay(attempt)
+            logging.warning("Discord Gateway 連線失敗（第 %s 次）：%s", attempt, e)
+            logging.info("%s 秒後重試連線...", delay)
+            await asyncio.sleep(delay)
+        except RuntimeError as e:
+            if "Session is closed" not in str(e):
+                raise
+            attempt += 1
+            delay = _retry_delay(attempt)
+            logging.warning("Discord HTTP Session 已關閉（第 %s 次）：%s", attempt, e)
+            logging.info("%s 秒後重建連線...", delay)
+            await asyncio.sleep(delay)
+        except Exception:
+            raise
+
 async def main():
     """主函式，用來啟動機器人"""
     # 初始化資料庫
     database.setup_database()
-    async with bot:
-        await load_cogs()
-        await bot.start(TOKEN)
+    await start_bot_with_retry()
 
 if __name__ == "__main__":
     # 為了在 Windows 和 Linux 上都能正常運作
