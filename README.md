@@ -2,12 +2,12 @@
 
 [中文版](./README_zh-TW.md) | English
 
-A feature-rich Discord music bot built with discord.py, supporting YouTube playback, intelligent recommendations, and comprehensive playlist management.
+A feature-rich Discord music bot built with discord.py, supporting playback from various audio/video platforms via yt-dlp, intelligent recommendations, and comprehensive playlist management.
 
 ## ✨ Features
 
 ### 🎵 Core Music Features
-- **YouTube Playback**: Play individual songs or entire playlists from YouTube
+- **Multi-Platform Support**: Play individual songs or entire playlists from various audio/video platforms via yt-dlp
 - **Queue Management**: Intelligent queue system with visual display in player
 - **Multiple Loop Modes**:
   - None: Play songs in order
@@ -79,8 +79,9 @@ python bot.py
 ## 🎯 Commands
 
 ### Music Commands
-- `/play <url>` - Play a song or playlist from YouTube
+- `/play <url>` - Play a song or playlist from supported platforms
 - `/leave` - Disconnect bot and clear queue
+- `/sites` - View supported audio/video platforms
 
 ### Player Controls (Button Interface)
 - **⏸️ Pause** - Pause/Resume playback
@@ -98,6 +99,7 @@ python bot.py
 ### Admin Commands
 - `/settings` - Open bot settings panel (requires Manage Server permission)
   - Toggle playlist support on/off
+- `/music_debug` - Toggle music system debug logging (requires Manage Server permission)
 
 ## 🏗️ Project Structure
 
