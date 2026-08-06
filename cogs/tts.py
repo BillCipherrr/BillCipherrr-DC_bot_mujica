@@ -18,7 +18,7 @@ class TTSCog(commands.Cog):
     @app_commands.command(name="tts", description="使用 MiniMax 將文字轉為語音並播放")
     @app_commands.describe(
         text="要轉換為語音的文字",
-        voice="選擇語音模型 (預設: female-shaonv)",
+        voice="moss_audio_98193709-7850-11f0-bb73-1e2a4cfcd245", ##AI王瑞賢
         speed="語速 (預設: 1.0)",
         volume="音量 (預設: 1.0)"
     )
@@ -61,7 +61,7 @@ class TTSCog(commands.Cog):
 
         # We will use speech-2.8-turbo or speech-2.6-turbo
         payload = {
-            "model": "speech-2.6-turbo",
+            "model": "speech-2.-turbo",
             "text": text,
             "stream": False,
             "output_format": "hex",
