@@ -33,11 +33,17 @@ else:
 
 # --- 正確的 yt-dlp 設定 ---
 
+# 系統本身沒有安裝 deno（yt-dlp 預設唯一啟用的 JS runtime），但已有 node（經 nvm 安裝，
+# 版本 >= 20 符合 yt-dlp 需求），因此改用 node 讓 yt-dlp 能解密簽章、嘗試 web/web safari
+# 等 client，而不是只能退回較弱、容易被 403 的 android_vr client。
+YDL_JS_RUNTIMES = {'node': {}}
+
 # 用於 /play 指令：快速提取資訊，允許播放列表
 YDL_OPTS_INFO_EXTRACT = {
     'quiet': True,
-    'extract_flat': True, 
+    'extract_flat': True,
     'noplaylist': False, # <-- 允許播放列表
+    'js_runtimes': YDL_JS_RUNTIMES,
 }
 
 # 用於 play_next 函式：獲取單一歌曲的串流，禁止播放列表
@@ -48,6 +54,7 @@ YDL_OPTS_STREAM = {
     'source_address': '0.0.0.0',
     'socket_timeout': 10,  # 避免來源被節流/擋下時 extract_info 無限期卡住，拖住 per-guild play_lock
     'retries': 2,
+    'js_runtimes': YDL_JS_RUNTIMES,
 }
 
 # 允許透過環境變數提供 cookies，處理需登入/受限資源（例如部份 Google Drive 連結）
@@ -61,8 +68,11 @@ FFMPEG_OPTIONS = {
     'options': '-vn',
 }
 
-# play_next 連續失敗時的重試節流設定，避免對來源（YouTube 等）連續轟炸
-MAX_CONSECUTIVE_PLAY_FAILURES = 3
+# play_next 連續失敗時的重試節流設定，避免對來源（YouTube 等）連續轟炸。
+# 每次重試 get_recommendation 都會挑一首「不同」的歌（有 dedup），單一影片被
+# YouTube SABR-only 實驗擋下並不代表下一首也會失敗，因此上限給高一點、
+# 讓自動播放能撐過一連串倒楣的 403，而不用使用者手動重新觸發。
+MAX_CONSECUTIVE_PLAY_FAILURES = 8
 PLAY_FAILURE_RETRY_DELAY = 2  # 秒
 
 
