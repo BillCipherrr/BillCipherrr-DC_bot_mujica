@@ -45,7 +45,9 @@ YDL_OPTS_STREAM = {
     'format': 'bestaudio/best',
     'quiet': True,
     'noplaylist': True, # <-- 禁止播放列表
-    'source_address': '0.0.0.0'
+    'source_address': '0.0.0.0',
+    'socket_timeout': 10,  # 避免來源被節流/擋下時 extract_info 無限期卡住，拖住 per-guild play_lock
+    'retries': 2,
 }
 
 # 允許透過環境變數提供 cookies，處理需登入/受限資源（例如部份 Google Drive 連結）
@@ -415,10 +417,11 @@ class MusicCog(commands.Cog):
                     self.logger.error("[Guild %s] Player after callback error: %s", guild_id, error)
                 else:
                     self.debug_log(guild_id, "after callback fired without error")
-                asyncio.run_coroutine_threadsafe(self.play_next(interaction), self.bot.loop)
+                asyncio.run_coroutine_threadsafe(
+                    self._handle_after_playing(interaction, guild_id, error), self.bot.loop
+                )
 
             voice_client.play(volume_source, after=after_playing)
-            self.consecutive_play_failures[guild_id] = 0
 
             database.log_song_play(guild_id, next_song['requester'].id, next_song)
             self.session_songs.setdefault(guild_id, []).append({
@@ -458,18 +461,34 @@ class MusicCog(commands.Cog):
                     "\n可嘗試設定環境變數 YTDLP_COOKIEFILE 指向瀏覽器匯出的 cookies.txt。"
                 )
             await interaction.channel.send(f"播放 **{next_song['title']}** 時發生錯誤: {err_msg}")
+            await self._retry_after_failure(interaction, guild_id)
 
-            failures = self.consecutive_play_failures.get(guild_id, 0) + 1
-            self.consecutive_play_failures[guild_id] = failures
-            if failures >= MAX_CONSECUTIVE_PLAY_FAILURES:
-                self.consecutive_play_failures[guild_id] = 0
-                await interaction.channel.send("⚠️ 連續多首歌曲播放失敗，已停止自動播放，請稍後再用 /play 或按鈕重新開始。")
-                self.set_current_song(guild_id, None)
-                return
+    async def _handle_after_playing(self, interaction: discord.Interaction, guild_id: int, error: Exception | None):
+        """voice_client.play() 的 after 回呼實際處理邏輯（已跳到 event loop 執行）。
+        與 _play_next_locked 的 except 區塊共用同一套節流重試機制
+        (_retry_after_failure)，避免 403 等中途串流失敗繞過重試上限/延遲，
+        無節制地立即再呼叫 play_next 造成風暴或（在來源被節流卡住時）長時間卡死。"""
+        if error:
+            failed_song = self.get_current_song(guild_id)
+            title = failed_song.get('title', '未知歌曲') if failed_song else '未知歌曲'
+            await interaction.channel.send(f"播放 **{title}** 時中斷: {error}")
+            await self._retry_after_failure(interaction, guild_id)
+        else:
+            self.consecutive_play_failures[guild_id] = 0
+            await self.play_next(interaction)
 
-            # 節流：延遲後才重試下一首，避免對來源連續轟炸造成更多錯誤
-            await asyncio.sleep(PLAY_FAILURE_RETRY_DELAY)
-            asyncio.create_task(self.play_next(interaction))
+    async def _retry_after_failure(self, interaction: discord.Interaction, guild_id: int):
+        """播放/串流失敗後的節流重試：達到連續失敗上限就停止自動播放，
+        否則延遲一段時間後才重試下一首，避免對來源連續轟炸。"""
+        failures = self.consecutive_play_failures.get(guild_id, 0) + 1
+        self.consecutive_play_failures[guild_id] = failures
+        if failures >= MAX_CONSECUTIVE_PLAY_FAILURES:
+            self.consecutive_play_failures[guild_id] = 0
+            await interaction.channel.send("⚠️ 連續多首歌曲播放失敗，已停止自動播放，請稍後再用 /play 或按鈕重新開始。")
+            self.set_current_song(guild_id, None)
+            return
+        await asyncio.sleep(PLAY_FAILURE_RETRY_DELAY)
+        asyncio.create_task(self.play_next(interaction))
 
     # --- 推薦功能 ---
     async def get_recommendation(self, song_info: dict, requester: discord.User):
