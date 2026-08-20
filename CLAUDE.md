@@ -16,7 +16,20 @@ pip install -r requirements.txt
 python bot.py
 ```
 
-There is no lint/test/build tooling configured in this repo (no linter config, no test suite, no CI). Verify changes by running the bot against a real Discord test server/bot token.
+There is no lint/build tooling or CI configured in this repo, but there is a two-layer playback verification suite (see `docs/superpowers/specs/2026-08-20-playback-verification-tooling-design.md`):
+
+```bash
+# Layer A: fast, offline logic tests (mocks discord.py/yt-dlp, no network, no token). Run this after every code change.
+pip install -r requirements-dev.txt
+env -u PYTHONPATH pytest tests/
+
+# Layer B: live smoke test against a real Discord test server/voice channel and real yt-dlp/YouTube.
+# Run this after upgrading yt-dlp/discord.py, or before trusting a fix that touches real playback.
+# Requires VERIFY_GUILD_ID / VERIFY_VOICE_CHANNEL_ID in .env (see below).
+env -u PYTHONPATH python scripts/verify_playback.py
+```
+
+Note: on machines with ROS2 sourced into the shell (`PYTHONPATH` containing `/opt/ros/...`), plain `pytest`/`python` invocations can fail with an unrelated `ModuleNotFoundError: No module named 'lark'` from pytest's plugin autoload picking up ROS's `launch_testing` package. The `env -u PYTHONPATH` prefix above works around it.
 
 Requires FFmpeg installed on the system and an Opus shared library available (bot.py probes common paths for `libopus.so.0/1` on Linux and Homebrew paths on macOS at startup).
 
