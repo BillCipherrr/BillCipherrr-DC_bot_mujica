@@ -1,3 +1,5 @@
+import pytest
+
 import database
 import cogs.music as music_module
 
@@ -58,6 +60,13 @@ async def test_recommendation_excludes_song_already_in_queue(music_cog, make_int
     guild_id = interaction.guild.id
     only_candidate_url = "https://www.youtube.com/watch?v=only_candidate"
 
+    # 播兩次讓它在 play_count 排序上贏過所有填充歌，確保它一定還留在「去重前」
+    # 的候選池裡（原本只播一次時，跟 20 首填充歌的 play_count 打平，會被
+    # get_user_top_songs 的 LIMIT 20 排序悄悄擠出候選池，導致這個測試其實
+    # 跟佇列去重無關也會通過）；接著把 played_at 推到很久以前，避免被「最近
+    # 20 首」去重視窗排除——這樣才能確保待會兒真正把它排除掉的，是佇列去重
+    # 邏輯本身，而不是不小心又被最近播放去重或 LIMIT 排序擠掉。
+    database.log_song_play(guild_id, interaction.user.id, {"url": only_candidate_url, "title": "Only Candidate", "duration": 90})
     database.log_song_play(guild_id, interaction.user.id, {"url": only_candidate_url, "title": "Only Candidate", "duration": 90})
     conn = database.get_db_connection()
     conn.execute("UPDATE play_history SET played_at = 1 WHERE guild_id = ?", (guild_id,))
@@ -69,7 +78,7 @@ async def test_recommendation_excludes_song_already_in_queue(music_cog, make_int
     # 已經在佇列裡了 -> 即使是使用者唯一的真實歷史候選，也不該被再推薦一次
     music_cog.get_queue(guild_id).append({"url": only_candidate_url, "title": "Only Candidate"})
 
-    with __import__("pytest").raises(Exception, match="YouTube API 未初始化"):
+    with pytest.raises(Exception, match="YouTube API 未初始化"):
         await music_cog.get_recommendation({"url": "https://www.youtube.com/watch?v=current"}, interaction.user)
 
 
