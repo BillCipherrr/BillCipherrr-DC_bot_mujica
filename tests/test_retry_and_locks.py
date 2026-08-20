@@ -8,7 +8,7 @@ from conftest import FakeGuild, FakeVoiceChannel
 
 
 async def test_concurrent_play_next_and_after_playing_dont_double_play(
-    music_cog, make_interaction, patch_ytdlp, temp_db
+    music_cog, make_interaction, patch_ytdlp, temp_db, monkeypatch
 ):
     interaction = make_interaction()
     guild_id = interaction.guild.id
@@ -20,18 +20,42 @@ async def test_concurrent_play_next_and_after_playing_dont_double_play(
 
     # 模擬 play_lock 被加上去要修的那個確切競態：after_playing 的成功回呼
     # 重新進入 play_next()，同時又有別的東西也對同一個 guild 呼叫 play_next()。
+    #
+    # 直接斷言 play_calls/DB 寫入次數並不足以證明鎖真的有作用：
+    # FakeVoiceClient.play() 是完全同步、內部沒有任何 await 的方法，所以就算
+    # 沒有 play_lock，兩個呼叫也不可能真的同時執行到 play() 內部；第二次呼叫
+    # 一樣會撞上「Already playing audio」的既有例外處理而讓 play_calls 穩定
+    # 停在 1 —— 這件事跟鎖存不存在無關（已用移除鎖並連跑 5 次驗證過，一樣穩定
+    # 通過）。真正能證明鎖有作用的，是直接量測「同一時間有幾個
+    # _play_next_locked 呼叫真的在執行中」，也就是鎖保護的臨界區間本身。
+    concurrent_count = 0
+    max_concurrent = 0
+    original_play_next_locked = music_cog._play_next_locked
+
+    async def instrumented_play_next_locked(interaction_arg):
+        nonlocal concurrent_count, max_concurrent
+        concurrent_count += 1
+        max_concurrent = max(max_concurrent, concurrent_count)
+        try:
+            await original_play_next_locked(interaction_arg)
+        finally:
+            concurrent_count -= 1
+
+    monkeypatch.setattr(music_cog, "_play_next_locked", instrumented_play_next_locked)
+
     await asyncio.gather(
         music_cog.play_next(interaction),
         music_cog._handle_after_playing(interaction, guild_id, None),
     )
 
+    # 這才是鎖真正保證的事：_play_next_locked 的執行區間永遠不會重疊。
+    assert max_concurrent == 1
+
     vc = interaction.guild.voice_client
-    # play_lock 必須完整地把兩次呼叫序列化：先跑的那個會播 Song A，並讓假
-    # voice client 保持在「in flight」狀態（沒有任何東西呼叫它的 stop()），
-    # 所以第二次呼叫嘗試播 Song B 時，一定會撞上 _play_next_locked 裡既有的
-    # 「Already playing audio」ClientException 處理，安靜放棄而不是重複播放
-    # 或是讓例外從 gather() 冒出來。如果 play_lock 被拿掉，這裡就會變成不
-    # 確定的競態，而不是穩定得到 1。
+    # 下面兩個斷言記錄的是「鎖生效後」實際會發生的行為（先跑的那個播 Song A，
+    # 第二個呼叫因為 voice client 還在 in-flight 狀態而被既有的
+    # ClientException 處理擋下、安靜放棄），但如前述，這兩個斷言本身不足以
+    # 單獨證明鎖的存在，所以搭配上面的 max_concurrent 斷言一起看。
     assert vc.play_calls == 1
 
     import database
