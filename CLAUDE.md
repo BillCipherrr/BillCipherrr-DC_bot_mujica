@@ -27,6 +27,8 @@ Requires FFmpeg installed on the system and an Opus shared library available (bo
 - `MINIMAX_API_KEY` — optional; without it, `/tts` responds with an error instead of failing at startup.
 - `YTDLP_COOKIEFILE` — optional; path to a cookies.txt for yt-dlp to access login-gated sources.
 - `MUSIC_DEBUG` — optional; `true/1/yes/on` enables verbose per-guild debug logging by default (can also be toggled per-guild at runtime via `/music_debug`).
+- `VERIFY_GUILD_ID` / `VERIFY_VOICE_CHANNEL_ID` — optional; only needed to run `scripts/verify_playback.py` (the live playback smoke test). Must point at a real Discord test server / voice channel the bot is already a member of.
+- `VERIFY_FIXTURE_URLS` — optional; comma-separated override for `scripts/verify_playback.py`'s built-in fixture YouTube URLs.
 
 ## Architecture
 
