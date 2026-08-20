@@ -51,13 +51,27 @@ async def test_skip_button_stops_voice_client_when_playing(music_cog, make_inter
     await asyncio.sleep(0.05)
 
 
-async def test_skip_button_noop_when_nothing_playing(music_cog, make_interaction):
+async def test_skip_button_noop_when_nothing_playing(music_cog, make_interaction, monkeypatch):
     interaction = make_interaction()
     view = PlayerView(music_cog, interaction)
     vc = interaction.guild.voice_client
     assert not vc.is_playing() and not vc.is_paused()
 
+    # vc.play_calls == 0 本身不足以證明 skip 真的沒動作：這個測試從頭到尾都
+    # 沒呼叫過 play()，所以這個數字不管 skip_button 的 guard 有沒有被拿掉都
+    # 會是 0。真正要驗證的是 vc.stop() 有沒有被呼叫，所以改成用 monkeypatch
+    # 直接 spy 住它。
+    stop_calls = []
+    original_stop = vc.stop
+
+    def spy_stop():
+        stop_calls.append(True)
+        return original_stop()
+
+    monkeypatch.setattr(vc, "stop", spy_stop)
+
     await view.skip_button.callback(interaction)
 
+    assert stop_calls == []  # skip 應該完全不呼叫 vc.stop()，因為沒有東西在播放/暫停
     assert vc.play_calls == 0
     assert interaction.response.sent
