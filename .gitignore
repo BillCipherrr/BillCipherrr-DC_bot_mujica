@@ -18,3 +18,4 @@ __pycache__/
 
 # Database file
 dc_bot.db
+dc_bot_verify.db

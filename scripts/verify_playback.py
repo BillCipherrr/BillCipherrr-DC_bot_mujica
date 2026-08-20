@@ -40,7 +40,7 @@ from views.player_view import LoopMode  # noqa: E402
 database.DB_PATH = "./dc_bot_verify.db"
 
 DEFAULT_FIXTURES = [
-    "https://www.youtube.com/watch?v=jNQXAC9IdE",  # "Me at the zoo"，YouTube 史上第一支影片，19 秒，非常穩定
+    "https://www.youtube.com/watch?v=jNQXAC9IVRw",  # "Me at the zoo"，YouTube 史上第一支影片，19 秒，非常穩定
     "https://www.youtube.com/watch?v=dQw4w9WgXcQ",  # 存活多年的知名影片，約 3.5 分鐘
 ]
 
