@@ -4,6 +4,8 @@ from discord.ext import commands
 import asyncio
 import os
 import socket
+import struct
+import sys
 import database
 from dotenv import load_dotenv
 import logging
@@ -34,6 +36,13 @@ if not discord.opus.is_loaded():
         '/usr/local/lib/libopus.dylib',      # macOS Intel (Homebrew)
         'opus',
     ]
+    if sys.platform == 'win32':
+        # Windows 沒有系統套件管理器可裝 libopus，但 discord.py 官方套件本身就在
+        # discord/bin/ 內附上對應位元數的 libopus DLL，只是 load_opus() 不會自動找到它。
+        _bitness = 'x64' if struct.calcsize('P') * 8 > 32 else 'x86'
+        _opus_candidates.insert(0, os.path.join(
+            os.path.dirname(discord.opus.__file__), 'bin', f'libopus-0.{_bitness}.dll'
+        ))
     for _lib in _opus_candidates:
         try:
             discord.opus.load_opus(_lib)

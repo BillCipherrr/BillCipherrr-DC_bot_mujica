@@ -1,4 +1,4 @@
-discord.py[voice]
+discord.py[voice]>=2.7.0
 yt-dlp[default]
 python-dotenv
 google-api-python-client

@@ -42,6 +42,7 @@ A feature-rich Discord music bot built with discord.py, supporting playback from
 
 - Python 3.8 or higher
 - FFmpeg installed on your system
+- Node.js 20+ installed and on PATH (optional, but recommended — see note below)
 - Discord Bot Token
 - YouTube Data API v3 Key (optional, for recommendation features)
 
@@ -63,7 +64,16 @@ pip install -r requirements.txt
    - **macOS**: `brew install ffmpeg`
    - **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
 
-4. **Set up environment variables**
+4. **Install Node.js (recommended)**
+
+   yt-dlp uses Node.js as a JavaScript runtime to decrypt YouTube's signature and unlock the stronger `web`/`web safari` clients. Without it, yt-dlp silently falls back to the JS-less `android_vr` client, which is much more prone to 403 errors on stream URLs.
+   - **Windows**: `winget install --id OpenJS.NodeJS.LTS -e` (open a **new** terminal afterward so the updated PATH takes effect)
+   - **Ubuntu/Debian**: `sudo apt-get install nodejs` or install via [nvm](https://github.com/nvm-sh/nvm)
+   - **macOS**: `brew install node`
+
+   Verify with `node --version` (needs to be v20+). If the bot prints `警告：找不到 node 執行檔` (or the English equivalent) on startup, Node isn't on the PATH of the process running the bot.
+
+5. **Set up environment variables**
 
 Create a `.env` file in the project root:
 ```env
@@ -71,7 +81,7 @@ DISCORD_TOKEN=your_discord_bot_token_here
 YOUTUBE_API_KEY=your_youtube_api_key_here
 ```
 
-5. **Run the bot**
+6. **Run the bot**
 ```bash
 python bot.py
 ```
@@ -172,6 +182,10 @@ The bot uses YouTube API to find related videos based on:
 **Bot doesn't join voice channel:**
 - Ensure FFmpeg is properly installed
 - Check that Opus library is loaded (console output)
+
+**Streams frequently fail with 403 errors / console shows "找不到 node 執行檔":**
+- Install Node.js 20+ (see Installation step 4) and make sure `node --version` works in the same terminal/session that runs `python bot.py`
+- On Windows, PATH changes from a fresh install only apply to newly opened terminals — restart your terminal and reactivate your virtualenv/conda env after installing Node
 
 **Recommendations not working:**
 - Verify YouTube API key is set in `.env`

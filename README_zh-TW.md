@@ -42,6 +42,7 @@
 
 - Python 3.8 或更高版本
 - 系統需安裝 FFmpeg
+- 系統需安裝 Node.js 20+ 並加入 PATH（選用，但建議安裝，詳見下方說明）
 - Discord Bot Token
 - YouTube Data API v3 金鑰（選用，用於推薦功能）
 
@@ -63,7 +64,16 @@ pip install -r requirements.txt
    - **macOS**：`brew install ffmpeg`
    - **Windows**：從 [ffmpeg.org](https://ffmpeg.org/download.html) 下載
 
-4. **設定環境變數**
+4. **安裝 Node.js（建議安裝）**
+
+   yt-dlp 會用 Node.js 作為 JavaScript runtime 來解密 YouTube 的簽章，才能使用較不容易被擋的 `web`/`web safari` client。沒有 Node.js 的話，yt-dlp 會靜默退回 JS-less 的 `android_vr` client，串流網址較容易遇到 403 錯誤。
+   - **Windows**：`winget install --id OpenJS.NodeJS.LTS -e`（安裝後請**開一個新的終端機視窗**，PATH 更新才會生效）
+   - **Ubuntu/Debian**：`sudo apt-get install nodejs`，或透過 [nvm](https://github.com/nvm-sh/nvm) 安裝
+   - **macOS**：`brew install node`
+
+   安裝後用 `node --version` 確認版本 >= 20。如果 bot 啟動時印出「警告：找不到 node 執行檔」，代表執行 bot 的那個終端機/程序的 PATH 裡沒有 node。
+
+5. **設定環境變數**
 
 在專案根目錄建立 `.env` 檔案：
 ```env
@@ -71,7 +81,7 @@ DISCORD_TOKEN=你的Discord機器人Token
 YOUTUBE_API_KEY=你的YouTube_API金鑰
 ```
 
-5. **啟動機器人**
+6. **啟動機器人**
 ```bash
 python bot.py
 ```
@@ -172,6 +182,10 @@ BillCipherrr-DC_bot_mujica/
 **機器人無法加入語音頻道：**
 - 確認 FFmpeg 已正確安裝
 - 檢查 Opus 函式庫是否已載入（查看控制台輸出）
+
+**串流經常出現 403 錯誤／控制台印出「找不到 node 執行檔」：**
+- 安裝 Node.js 20+（見安裝步驟 4），並確認在執行 `python bot.py` 的同一個終端機/環境中 `node --version` 有效
+- Windows 上，新安裝的 PATH 只對之後新開啟的終端機生效——裝完 Node 後請重開終端機並重新啟用虛擬環境/conda 環境
 
 **推薦功能無法使用：**
 - 驗證 YouTube API 金鑰是否已設定在 `.env`
