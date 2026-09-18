@@ -86,6 +86,87 @@ YOUTUBE_API_KEY=你的YouTube_API金鑰
 python bot.py
 ```
 
+## 🖥️ 使用 systemd 設定開機自動啟動（Linux）
+
+在 Linux 伺服器上，可以讓機器人開機時自動啟動、在指定的 conda 環境（例如 `DC_bot`）中執行、程式當掉時立刻自動重啟，並且每 10 分鐘由一個 watchdog 檢查一次，若發現沒在執行就自動啟動。這裡使用兩個 systemd service 加一個 timer 來達成，不需要 cron，也不需要長期開放 passwordless sudo。
+
+**1. 主服務** — `/etc/systemd/system/dc-bot-mujica.service`
+```ini
+[Unit]
+Description=DC_bot Mujica Discord Music Bot
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=<你的Linux使用者名稱>
+Group=<你的Linux使用者名稱>
+WorkingDirectory=/path/to/BillCipherrr-DC_bot_mujica
+Environment="PATH=/path/to/conda/envs/DC_bot/bin:/path/to/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/path/to/conda/envs/DC_bot/bin/python bot.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+`ExecStart` 直接指向 `DC_bot` conda 環境裡的 `python` 執行檔，所以機器人一定會在該環境底下執行，不需要依賴啟動它的 shell 是否有先 `conda activate`。`Restart=always` 讓程式當掉後大約 10 秒內就會自動重啟。
+
+**2. Watchdog 服務** — `/etc/systemd/system/dc-bot-mujica-watchdog.service`
+```ini
+[Unit]
+Description=Ensure dc-bot-mujica.service is running (watchdog)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'systemctl is-active --quiet dc-bot-mujica.service || (systemctl reset-failed dc-bot-mujica.service; systemctl start dc-bot-mujica.service)'
+```
+
+**3. Watchdog timer** — `/etc/systemd/system/dc-bot-mujica-watchdog.timer`
+```ini
+[Unit]
+Description=Run dc-bot-mujica watchdog every 10 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+Unit=dc-bot-mujica-watchdog.service
+
+[Install]
+WantedBy=timers.target
+```
+每 10 分鐘檢查一次主服務是否在執行，若沒有就重設失敗狀態並重新啟動——這是 `Restart=always` 之外的保險機制（例如服務被手動停掉，或觸發了 crash-loop 的啟動次數限制時）。
+
+**安裝（需要 sudo，只需執行一次）：**
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now dc-bot-mujica.service
+sudo systemctl enable --now dc-bot-mujica-watchdog.timer
+```
+
+**檢查狀態／查看日誌：**
+```bash
+systemctl status dc-bot-mujica.service
+journalctl -u dc-bot-mujica.service -f
+systemctl list-timers dc-bot-mujica-watchdog.timer
+```
+
+**復原／解除安裝：**
+```bash
+sudo systemctl disable --now dc-bot-mujica.service
+sudo systemctl disable --now dc-bot-mujica-watchdog.timer
+sudo rm /etc/systemd/system/dc-bot-mujica.service
+sudo rm /etc/systemd/system/dc-bot-mujica-watchdog.service
+sudo rm /etc/systemd/system/dc-bot-mujica-watchdog.timer
+sudo systemctl daemon-reload
+sudo systemctl reset-failed
+```
+這會停止兩個服務、取消開機自動啟動、刪除 unit 檔案，並清除 systemd 中殘留的狀態——之後機器人就會回到需要手動執行 `python bot.py` 才能啟動的狀態。
+
 ## 🎯 指令說明
 
 ### 音樂指令

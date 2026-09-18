@@ -86,6 +86,87 @@ YOUTUBE_API_KEY=your_youtube_api_key_here
 python bot.py
 ```
 
+## 🖥️ Auto-start on Boot with systemd (Linux)
+
+For a Linux server, you can have the bot start automatically on boot, run inside a dedicated conda environment (e.g. `DC_bot`), restart itself instantly if it crashes, and get checked every 10 minutes by a watchdog in case it ever stops running. This uses two systemd units plus a timer — no cron, no long-lived passwordless sudo required.
+
+**1. Main service** — `/etc/systemd/system/dc-bot-mujica.service`
+```ini
+[Unit]
+Description=DC_bot Mujica Discord Music Bot
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=<your-linux-username>
+Group=<your-linux-username>
+WorkingDirectory=/path/to/BillCipherrr-DC_bot_mujica
+Environment="PATH=/path/to/conda/envs/DC_bot/bin:/path/to/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/path/to/conda/envs/DC_bot/bin/python bot.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+`ExecStart` points directly at the `DC_bot` conda environment's `python` binary, so the bot always runs with that environment's dependencies regardless of whether the shell that triggers it has `conda activate`d anything. `Restart=always` restarts the process within 10 seconds of a crash.
+
+**2. Watchdog service** — `/etc/systemd/system/dc-bot-mujica-watchdog.service`
+```ini
+[Unit]
+Description=Ensure dc-bot-mujica.service is running (watchdog)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'systemctl is-active --quiet dc-bot-mujica.service || (systemctl reset-failed dc-bot-mujica.service; systemctl start dc-bot-mujica.service)'
+```
+
+**3. Watchdog timer** — `/etc/systemd/system/dc-bot-mujica-watchdog.timer`
+```ini
+[Unit]
+Description=Run dc-bot-mujica watchdog every 10 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+Unit=dc-bot-mujica-watchdog.service
+
+[Install]
+WantedBy=timers.target
+```
+Every 10 minutes this checks whether the main service is active and, if not, resets any failure state and starts it again — a backstop for cases `Restart=always` doesn't cover (e.g. the service was manually stopped, or hit its crash-loop start limit).
+
+**Install (requires sudo, one-time):**
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now dc-bot-mujica.service
+sudo systemctl enable --now dc-bot-mujica-watchdog.timer
+```
+
+**Check status / logs:**
+```bash
+systemctl status dc-bot-mujica.service
+journalctl -u dc-bot-mujica.service -f
+systemctl list-timers dc-bot-mujica-watchdog.timer
+```
+
+**Undo / uninstall:**
+```bash
+sudo systemctl disable --now dc-bot-mujica.service
+sudo systemctl disable --now dc-bot-mujica-watchdog.timer
+sudo rm /etc/systemd/system/dc-bot-mujica.service
+sudo rm /etc/systemd/system/dc-bot-mujica-watchdog.service
+sudo rm /etc/systemd/system/dc-bot-mujica-watchdog.timer
+sudo systemctl daemon-reload
+sudo systemctl reset-failed
+```
+This stops both units, removes autostart-on-boot, deletes the unit files, and clears them from systemd's state — the bot goes back to needing to be started manually with `python bot.py`.
+
 ## 🎯 Commands
 
 ### Music Commands
