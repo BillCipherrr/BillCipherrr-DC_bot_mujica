@@ -32,7 +32,8 @@ load_dotenv()
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import database
-from cogs.music import MusicCog, _resolve_node_path
+from cogs.music import MusicCog
+from mujica.ytdlp import _resolve_node_path
 from views.player_view import LoopMode
 
 # 寫進獨立的暫存資料庫而不是正式的 dc_bot.db，避免測試用的假播放紀錄污染
