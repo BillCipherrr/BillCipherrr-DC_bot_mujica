@@ -1,7 +1,9 @@
-import discord
-import time
 import random
+import time
 from enum import Enum
+
+import discord
+
 
 # 定義播放模式的 Enum
 class LoopMode(Enum):

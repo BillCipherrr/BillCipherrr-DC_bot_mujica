@@ -1,5 +1,6 @@
 import discord
 
+
 class SettingsView(discord.ui.View):
     def __init__(self, music_cog, guild_id):
         super().__init__(timeout=None)

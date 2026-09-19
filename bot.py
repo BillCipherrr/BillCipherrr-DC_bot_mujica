@@ -1,14 +1,16 @@
 
-import discord
-from discord.ext import commands
 import asyncio
+import logging
 import os
 import socket
-import database
-from dotenv import load_dotenv
-import logging
+
 import aiohttp
+import discord
 from aiohttp import client_exceptions
+from discord.ext import commands
+from dotenv import load_dotenv
+
+import database
 
 # 載入 .env 檔案中的環境變數
 load_dotenv()
@@ -23,6 +25,7 @@ INTENTS.voice_states = True    # 允許讀取語音狀態
 
 # --- 日誌設定 ---
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # --- 確保 Opus 已載入 ---
 # 某些系統不會自動找到 libopus，手動指定共享庫名稱避免語音連線立即斷線
@@ -64,6 +67,7 @@ def create_bot() -> commands.Bot:
             print(f"Synced {len(synced)} command(s)")
         except Exception as e:
             print(f"Failed to sync commands: {e}")
+            logger.error("Failed to sync commands", exc_info=e)
 
     return bot
 
@@ -77,6 +81,7 @@ async def load_cogs(bot: commands.Bot):
                 print(f'Loaded cog: {filename}')
             except Exception as e:
                 print(f'Failed to load cog {filename}: {e}')
+                logger.error("Failed to load cog %s", filename, exc_info=e)
 
 
 def _retry_delay(attempt: int) -> int:
@@ -98,16 +103,16 @@ async def start_bot_with_retry():
         except (client_exceptions.ClientError, asyncio.TimeoutError, discord.GatewayNotFound) as e:
             attempt += 1
             delay = _retry_delay(attempt)
-            logging.warning("Discord Gateway 連線失敗（第 %s 次）：%s", attempt, e)
-            logging.info("%s 秒後重試連線...", delay)
+            logger.warning("Discord Gateway 連線失敗（第 %s 次）：%s", attempt, e)
+            logger.info("%s 秒後重試連線...", delay)
             await asyncio.sleep(delay)
         except RuntimeError as e:
             if "Session is closed" not in str(e):
                 raise
             attempt += 1
             delay = _retry_delay(attempt)
-            logging.warning("Discord HTTP Session 已關閉（第 %s 次）：%s", attempt, e)
-            logging.info("%s 秒後重建連線...", delay)
+            logger.warning("Discord HTTP Session 已關閉（第 %s 次）：%s", attempt, e)
+            logger.info("%s 秒後重建連線...", delay)
             await asyncio.sleep(delay)
         except Exception:
             raise

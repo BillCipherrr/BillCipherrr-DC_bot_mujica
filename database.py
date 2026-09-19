@@ -1,6 +1,5 @@
 import sqlite3
 import time
-from typing import Optional
 
 DB_PATH = './dc_bot.db'
 

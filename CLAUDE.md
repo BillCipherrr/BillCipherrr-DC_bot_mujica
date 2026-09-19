@@ -16,7 +16,7 @@ pip install -r requirements.txt
 python bot.py
 ```
 
-There is no lint/test/build tooling configured in this repo (no linter config, no test suite, no CI). Verify changes by running the bot against a real Discord test server/bot token.
+A GitHub Actions workflow (`.github/workflows/lint.yml`) runs `pip install -r requirements.txt` and `ruff check .` on every push/PR to `main`. Run `ruff check .` locally before pushing (no separate config — uses ruff's defaults). There is still no test suite. Verify changes by running the bot against a real Discord test server/bot token.
 
 Requires FFmpeg installed on the system and an Opus shared library available (bot.py probes common paths for `libopus.so.0/1` on Linux and Homebrew paths on macOS at startup).
 

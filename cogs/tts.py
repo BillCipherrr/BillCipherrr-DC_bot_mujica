@@ -1,17 +1,18 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
-import aiohttp
+import logging
 import os
-import io
-import json
 import tempfile
-import asyncio
+
+import aiohttp
+import discord
+from discord import app_commands
+from discord.ext import commands
+
 
 class TTSCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.minimax_api_key = os.getenv("MINIMAX_API_KEY")
+        self.logger = logging.getLogger(__name__)
         if not self.minimax_api_key:
             print("警告：未找到 MINIMAX_API_KEY 環境變數，TTS 功能將無法使用。")
 
@@ -80,29 +81,28 @@ class TTSCog(commands.Cog):
         }
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=payload) as response:
-                    if response.status != 200:
-                        err_text = await response.text()
-                        await interaction.followup.send(f"❌ MiniMax API 錯誤: HTTP {response.status} - {err_text}")
-                        return
+            async with aiohttp.ClientSession() as session, session.post(url, headers=headers, json=payload) as response:
+                if response.status != 200:
+                    err_text = await response.text()
+                    await interaction.followup.send(f"❌ MiniMax API 錯誤: HTTP {response.status} - {err_text}")
+                    return
 
-                    data = await response.json()
+                data = await response.json()
 
-                    if "base_resp" in data and data["base_resp"]["status_code"] != 0:
-                        await interaction.followup.send(f"❌ API 回傳錯誤: {data['base_resp']['status_msg']}")
-                        return
+                if "base_resp" in data and data["base_resp"]["status_code"] != 0:
+                    await interaction.followup.send(f"❌ API 回傳錯誤: {data['base_resp']['status_msg']}")
+                    return
 
-                    if "data" not in data or "audio" not in data["data"]:
-                        await interaction.followup.send("❌ API 回傳資料格式不符。")
-                        return
+                if "data" not in data or "audio" not in data["data"]:
+                    await interaction.followup.send("❌ API 回傳資料格式不符。")
+                    return
 
-                    hex_audio = data["data"]["audio"]
-                    if not hex_audio:
-                        await interaction.followup.send("❌ API 回傳音檔為空。")
-                        return
+                hex_audio = data["data"]["audio"]
+                if not hex_audio:
+                    await interaction.followup.send("❌ API 回傳音檔為空。")
+                    return
 
-                    audio_bytes = bytes.fromhex(hex_audio)
+                audio_bytes = bytes.fromhex(hex_audio)
 
             # Write audio to a temporary file
             fd, temp_path = tempfile.mkstemp(suffix=".mp3")
@@ -116,11 +116,13 @@ class TTSCog(commands.Cog):
                     os.remove(temp_path)
                 except Exception as e:
                     print(f"刪除暫存檔 {temp_path} 時發生錯誤: {e}")
+                    self.logger.debug("刪除暫存檔 %s 時發生錯誤: %s", temp_path, e, exc_info=e)
 
             voice_client.play(audio_source, after=after_playing)
             await interaction.followup.send(f"🗣️ **播放語音:** {text[:50]}{'...' if len(text) > 50 else ''}")
 
         except Exception as e:
+            self.logger.error("tts command error", exc_info=e)
             await interaction.followup.send(f"❌ 發生未預期錯誤: {e}")
 
 async def setup(bot: commands.Bot):

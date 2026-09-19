@@ -1,25 +1,28 @@
-import discord
-from discord.ext import commands, tasks
-from discord import app_commands
-import yt_dlp
-import os
 import asyncio
-import random
-import time
 import logging
-import traceback
+import os
+import random
 import shlex
+import time
 from collections import deque
-from urllib.parse import urlparse, parse_qs, urlencode
+from urllib.parse import parse_qs, urlparse
 
-
-# 匯入其他的 View
-from views.player_view import PlayerView, LoopMode
-from views.settings_view import SettingsView
-import database
+import discord
+import yt_dlp
+from discord import app_commands
+from discord.ext import commands, tasks
 
 # 從環境變數讀取 API 金鑰
 from googleapiclient.discovery import build
+
+import database
+
+# 匯入其他的 View
+from views.player_view import LoopMode, PlayerView
+from views.settings_view import SettingsView
+
+logger = logging.getLogger(__name__)
+
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 if not YOUTUBE_API_KEY:
     print("警告：未找到 YOUTUBE_API_KEY 環境變數，推薦功能將無法使用。")
@@ -29,6 +32,7 @@ else:
         youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
     except Exception as e:
         print(f"初始化 YouTube API 時發生錯誤: {e}")
+        logger.error("初始化 YouTube API 時發生錯誤", exc_info=e)
         youtube = None
 
 # --- 正確的 yt-dlp 設定 ---
@@ -120,6 +124,11 @@ def normalize_title_for_dedup(title: str) -> str:
     cleaned = ''.join(ch for ch in title.lower() if ch.isalnum() or ch.isspace())
     return ' '.join(cleaned.split())
 
+
+class RecommendationError(Exception):
+    """Raised when get_recommendation() cannot find a song to recommend."""
+
+
 class MusicCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -174,15 +183,15 @@ class MusicCog(commands.Cog):
                 try:
                     await vc.move_to(channel)
                     return vc
-                except Exception:
-                    pass  # 移動失敗就走下面的清理流程
+                except Exception as e:
+                    self.logger.debug("Ignoring cleanup error: %s", e, exc_info=e)  # 移動失敗就走下面的清理流程
 
             # 3) 存在但狀態異常（半殘留） → 強制斷開再重連
             if vc:
                 try:
                     await vc.disconnect(force=True)
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.debug("Ignoring cleanup error: %s", e, exc_info=e)
                 await asyncio.sleep(0.5)
 
             # 4) 嘗試連線（最多 2 次）
@@ -219,8 +228,8 @@ class MusicCog(commands.Cog):
                 if stale_vc:
                     try:
                         await stale_vc.disconnect(force=True)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        self.logger.debug("Ignoring cleanup error: %s", e, exc_info=e)
 
                 if attempt < 1:
                     await asyncio.sleep(1.5)
@@ -305,8 +314,8 @@ class MusicCog(commands.Cog):
             self.logger.warning("ensure_recommendation_seed failed", exc_info=e)
             try:
                 await interaction.followup.send(f"推薦歌曲時發生錯誤: {e}", ephemeral=True)
-            except Exception:
-                pass
+            except Exception as followup_error:
+                self.logger.debug("Ignoring cleanup error: %s", followup_error, exc_info=followup_error)
 
     # --- 核心播放邏輯 (已修正) ---
     async def play_next(self, interaction: discord.Interaction):
@@ -344,12 +353,13 @@ class MusicCog(commands.Cog):
 
         if not queue:
             if loop_mode == LoopMode.RECOMMEND and current_song:
-                await interaction.channel.send(f"🎶 佇列已空，正在為您推薦下一首歌...")
+                await interaction.channel.send("🎶 佇列已空，正在為您推薦下一首歌...")
                 try:
                     recommended_song_info = await self.get_recommendation(current_song, interaction.user)
                     queue.append(recommended_song_info)
                     asyncio.create_task(self.play_next(interaction))
                 except Exception as e:
+                    self.logger.warning("play_next recommendation fallback failed", exc_info=e)
                     await interaction.channel.send(f"推薦歌曲時發生錯誤: {e}")
                 return
             self.set_current_song(guild_id, None)
@@ -476,11 +486,11 @@ class MusicCog(commands.Cog):
 
         # --- 階段 3：fallback 到 YouTube API ---
         if not youtube:
-            raise Exception("歷史記錄不足且 YouTube API 未初始化，無法推薦歌曲。")
+            raise RecommendationError("歷史記錄不足且 YouTube API 未初始化，無法推薦歌曲。")
 
         video_id = extract_video_id(song_info.get('url', '') or song_info.get('webpage_url', ''))
         if not video_id:
-            raise Exception("無法解析當前歌曲的 videoId。")
+            raise RecommendationError("無法解析當前歌曲的 videoId。")
 
         loop = asyncio.get_event_loop()
 
@@ -518,7 +528,7 @@ class MusicCog(commands.Cog):
         # 嚴格去重有候選就用，否則放寬為只排 video_id
         chosen_list = yt_candidates if yt_candidates else yt_candidates_relaxed
         if not chosen_list:
-            raise Exception("找不到可推薦的歌曲。")
+            raise RecommendationError("找不到可推薦的歌曲。")
 
         chosen = chosen_list[0]
         vid = to_video_id(chosen)
@@ -626,8 +636,8 @@ class MusicCog(commands.Cog):
             try:
                 if voice_client.is_playing() or voice_client.is_paused():
                     voice_client.stop()
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug("Ignoring cleanup error: %s", e, exc_info=e)
             player_message = self.get_player_message(guild_id)
             if player_message:
                 try: await player_message.delete()
@@ -636,8 +646,8 @@ class MusicCog(commands.Cog):
             await self._send_session_summary(interaction.channel, guild_id)
             try:
                 await voice_client.disconnect(force=True)
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug("Ignoring cleanup error: %s", e, exc_info=e)
 
     @app_commands.command(name="music_debug", description="[管理員] 切換音樂系統除錯日誌模式")
     @app_commands.checks.has_permissions(manage_guild=True)

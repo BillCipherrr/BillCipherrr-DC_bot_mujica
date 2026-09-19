@@ -1,9 +1,11 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
 from typing import Optional
+
+import discord
+from discord import app_commands
+from discord.ext import commands
+
 import database
-import datetime
+
 
 class HistoryCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -12,7 +14,7 @@ class HistoryCog(commands.Cog):
     history_group = app_commands.Group(name="history", description="查詢播放歷史紀錄")
 
     @history_group.command(name="user", description="查詢您或某位使用者的播放歷史")
-    async def user_history(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
+    async def user_history(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):  # noqa: UP045 — kept for Python 3.8 compat (README's stated minimum)
         target_user = user or interaction.user
         history = database.get_user_history(target_user.id)
 
