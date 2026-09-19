@@ -307,7 +307,6 @@ async def cleanup_pending_tasks(music_cog):
     """play_next 在佇列播完時會排程一個 300 秒的斷線計時器；測試結束後
     主動取消，避免留下 pending task 造成警告或拖慢測試結束。"""
     yield
-    for guild_id in list(music_cog.disconnect_timers.keys()):
+    for guild_id in list(music_cog.states):
         music_cog.cancel_disconnect_timer(guild_id)
-    for guild_id in list(music_cog.progress_tasks.keys()):
         music_cog.stop_progress_task(guild_id)

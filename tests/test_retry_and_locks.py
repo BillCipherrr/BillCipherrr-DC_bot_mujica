@@ -76,11 +76,11 @@ async def test_retry_after_failure_stops_at_max_consecutive_failures(
     interaction = make_interaction()
     guild_id = interaction.guild.id
     music_cog.set_current_song(guild_id, {"title": "Doomed Song", "url": "https://x", "requester": interaction.user})
-    music_cog.consecutive_play_failures[guild_id] = 2  # 再一次就達到上限
+    music_cog.get_state(guild_id).consecutive_play_failures = 2  # 再一次就達到上限
 
     await music_cog._retry_after_failure(interaction, guild_id)  # 這次會把失敗次數推到 3 == 上限
 
-    assert music_cog.consecutive_play_failures[guild_id] == 0
+    assert music_cog.get_state(guild_id).consecutive_play_failures == 0
     assert music_cog.get_current_song(guild_id) is None
     assert any("已停止自動播放" in (msg.content or "") for msg in interaction.channel.sent_messages)
 
@@ -106,7 +106,7 @@ async def test_retry_after_failure_reschedules_below_cap(music_cog, make_interac
 
     await music_cog._retry_after_failure(interaction, guild_id)
 
-    assert music_cog.consecutive_play_failures[guild_id] == 1
+    assert music_cog.get_state(guild_id).consecutive_play_failures == 1
     assert len(scheduled) == 1
     assert not any("已停止自動播放" in (msg.content or "") for msg in interaction.channel.sent_messages)
 

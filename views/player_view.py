@@ -1,17 +1,10 @@
 import random
 import time
-from enum import Enum
 
 import discord
 
+from mujica.state import LoopMode  # 其他模組仍從這裡 import LoopMode
 
-# 定義播放模式的 Enum
-class LoopMode(Enum):
-    NONE = 0
-    SONG = 1
-    QUEUE = 2
-    SHUFFLE = 3
-    RECOMMEND = 4
 
 class PlayerView(discord.ui.View):
     def __init__(self, music_cog, interaction):
