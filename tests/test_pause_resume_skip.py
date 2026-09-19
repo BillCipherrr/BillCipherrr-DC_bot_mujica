@@ -1,5 +1,6 @@
 import asyncio
 
+from mujica.song import Song
 from views.player_view import PlayerView
 
 
@@ -7,7 +8,7 @@ async def test_pause_resume_position_tracking(music_cog, make_interaction, patch
     interaction = make_interaction()
     guild_id = interaction.guild.id
     queue = music_cog.get_queue(guild_id)
-    queue.append({"url": "https://www.youtube.com/watch?v=aaa", "title": "Song A", "requester": interaction.user})
+    queue.append(Song(url="https://www.youtube.com/watch?v=aaa", title="Song A", requester=interaction.user))
     patch_ytdlp(result={"url": "https://stream.example/a.m4a", "title": "Song A", "duration": 100})
     await music_cog.play_next(interaction)
 
@@ -33,7 +34,7 @@ async def test_skip_button_stops_voice_client_when_playing(music_cog, make_inter
     interaction = make_interaction()
     guild_id = interaction.guild.id
     queue = music_cog.get_queue(guild_id)
-    queue.append({"url": "https://www.youtube.com/watch?v=aaa", "title": "Song A", "requester": interaction.user})
+    queue.append(Song(url="https://www.youtube.com/watch?v=aaa", title="Song A", requester=interaction.user))
     patch_ytdlp(result={"title": "Song A", "url": "https://stream.example/a"})
     await music_cog.play_next(interaction)
 
@@ -75,3 +76,24 @@ async def test_skip_button_noop_when_nothing_playing(music_cog, make_interaction
     assert stop_calls == []  # skip 應該完全不呼叫 vc.stop()，因為沒有東西在播放/暫停
     assert vc.play_calls == 0
     assert interaction.response.sent
+
+
+async def test_paused_position_zero_is_honored_not_treated_as_missing(
+    music_cog, make_interaction, patch_ytdlp, temp_db
+):
+    interaction = make_interaction()
+    guild_id = interaction.guild.id
+    music_cog.get_queue(guild_id).append(
+        Song(url="https://www.youtube.com/watch?v=aaa", title="Song A", requester=interaction.user)
+    )
+    patch_ytdlp(result={"url": "https://stream.example/a.m4a", "title": "Song A", "duration": 100})
+    await music_cog.play_next(interaction)
+    interaction.guild.voice_client.pause()
+
+    song = music_cog.get_current_song(guild_id)
+    song.resume_offset = 50
+    song.paused_position = 0.0
+    assert music_cog.get_current_position(guild_id) == 0.0  # 明確的 0 不能被當成「沒設定」而退回 resume_offset
+
+    song.paused_position = None
+    assert music_cog.get_current_position(guild_id) == 50  # 沒設定才退回 resume_offset

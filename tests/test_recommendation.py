@@ -2,6 +2,7 @@ import pytest
 
 import cogs.music as music_module
 import database
+from mujica.song import Song
 
 
 async def test_recommendation_prefers_user_history_over_guild_top(music_cog, make_interaction, temp_db):
@@ -22,9 +23,9 @@ async def test_recommendation_prefers_user_history_over_guild_top(music_cog, mak
     for i in range(20):
         database.log_song_play(guild_id, 555, {"url": f"https://www.youtube.com/watch?v=filler{i}", "title": f"Filler {i}", "duration": 60})
 
-    rec = await music_cog.get_recommendation({"url": "https://www.youtube.com/watch?v=current"}, interaction.user)
-    assert rec["_rec_source"] == "user_history"
-    assert rec["url"] == user_song_url
+    rec = await music_cog.get_recommendation(Song(url="https://www.youtube.com/watch?v=current", title="Current Song", requester=interaction.user), interaction.user)
+    assert rec.rec_source == "user_history"
+    assert rec.url == user_song_url
 
 
 async def test_recommendation_falls_back_to_guild_top(music_cog, make_interaction, temp_db):
@@ -49,10 +50,10 @@ async def test_recommendation_falls_back_to_guild_top(music_cog, make_interactio
         )
 
     rec = await music_cog.get_recommendation(
-        {"url": "https://www.youtube.com/watch?v=aaa", "title": "Current Song"}, interaction.user
+        Song(url="https://www.youtube.com/watch?v=aaa", title="Current Song", requester=interaction.user), interaction.user
     )
-    assert rec["_rec_source"] == "guild_top"
-    assert rec["url"] == popular_url
+    assert rec.rec_source == "guild_top"
+    assert rec.url == popular_url
 
 
 async def test_recommendation_excludes_song_already_in_queue(music_cog, make_interaction, temp_db):
@@ -76,10 +77,10 @@ async def test_recommendation_excludes_song_already_in_queue(music_cog, make_int
         database.log_song_play(guild_id, interaction.user.id, {"url": f"https://www.youtube.com/watch?v=filler{i}", "title": f"Filler {i}", "duration": 60})
 
     # 已經在佇列裡了 -> 即使是使用者唯一的真實歷史候選，也不該被再推薦一次
-    music_cog.get_queue(guild_id).append({"url": only_candidate_url, "title": "Only Candidate"})
+    music_cog.get_queue(guild_id).append(Song(url=only_candidate_url, title="Only Candidate", requester=interaction.user))
 
     with pytest.raises(Exception, match="YouTube API 未初始化"):
-        await music_cog.get_recommendation({"url": "https://www.youtube.com/watch?v=current"}, interaction.user)
+        await music_cog.get_recommendation(Song(url="https://www.youtube.com/watch?v=current", title="Current Song", requester=interaction.user), interaction.user)
 
 
 async def test_recommendation_falls_back_to_youtube_api(music_cog, make_interaction, temp_db, monkeypatch):
@@ -104,8 +105,9 @@ async def test_recommendation_falls_back_to_youtube_api(music_cog, make_interact
     monkeypatch.setattr(music_module, "youtube", FakeYoutubeClient())
 
     rec = await music_cog.get_recommendation(
-        {"url": "https://www.youtube.com/watch?v=current", "title": "Current Song"}, interaction.user
+        Song(url="https://www.youtube.com/watch?v=current", title="Current Song", requester=interaction.user),
+        interaction.user,
     )
-    assert rec["_rec_source"] == "youtube_api"
-    assert rec["url"] == "https://www.youtube.com/watch?v=yt_api_pick"
-    assert rec["title"] == "From YouTube API"
+    assert rec.rec_source == "youtube_api"
+    assert rec.url == "https://www.youtube.com/watch?v=yt_api_pick"
+    assert rec.title == "From YouTube API"

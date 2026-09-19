@@ -1,10 +1,11 @@
+from mujica.song import Song
 from views.player_view import LoopMode
 
 
 def test_guild_states_are_isolated(music_cog):
-    music_cog.get_queue(1).append({"title": "A"})
+    music_cog.get_queue(1).append(Song(url="https://x/a", title="A", requester="someone"))
     music_cog.set_loop_mode(1, LoopMode.SONG)
-    music_cog.set_current_song(1, {"title": "A"})
+    music_cog.set_current_song(1, Song(url="https://x/a", title="A", requester="someone"))
 
     assert len(music_cog.get_queue(2)) == 0
     assert music_cog.get_loop_mode(2) == LoopMode.NONE
@@ -43,7 +44,7 @@ async def test_session_summary_sends_once_and_clears_session_songs(music_cog, ma
     interaction = make_interaction()
     guild_id = interaction.guild.id
     music_cog.get_state(guild_id).session_songs.append(
-        {"title": "Song A", "url": "https://www.youtube.com/watch?v=aaa", "requester": "someone"}
+        Song(url="https://www.youtube.com/watch?v=aaa", title="Song A", requester="someone")
     )
 
     await music_cog._send_session_summary(interaction.channel, guild_id)

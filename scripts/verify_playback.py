@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import database
 from cogs.music import MusicCog
+from mujica.song import Song
 from mujica.ytdlp import _resolve_node_path
 from views.player_view import LoopMode
 
@@ -95,6 +96,11 @@ class StepResult:
         self.detail = ""
 
 
+def current_title(music_cog, guild_id):
+    song = music_cog.get_current_song(guild_id)
+    return song.title if song else None
+
+
 async def wait_until(predicate, timeout=STEP_TIMEOUT, interval=0.5):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -116,14 +122,14 @@ async def run_scenario(music_cog, interaction, fixtures, results):
         warn = "（警告：會退回容易被 403 的 android_vr client）" if not node_path else ""
         print(f"  node runtime 解析結果: {node_path!r}{warn}")
         music_cog.get_queue(guild_id).append(
-            {"url": fixtures[0], "title": "fixture-1", "requester": interaction.user}
+            Song(url=fixtures[0], title="fixture-1", requester=interaction.user)
         )
         await music_cog.play_next(interaction)
         ok = await wait_until(lambda: vc.is_playing())
         if not ok:
             raise AssertionError("voice_client 在時限內沒有進入 is_playing() 狀態")
         step.passed = True
-        step.detail = f"目前播放中: {music_cog.get_current_song(guild_id).get('title')!r}"
+        step.detail = f"目前播放中: {music_cog.get_current_song(guild_id).title!r}"
     except Exception as e:
         step.passed = False
         step.detail = f"{type(e).__name__}: {e}"
@@ -165,16 +171,16 @@ async def run_scenario(music_cog, interaction, fixtures, results):
     else:
         try:
             music_cog.get_queue(guild_id).append(
-                {"url": fixtures[1], "title": "fixture-2", "requester": interaction.user}
+                Song(url=fixtures[1], title="fixture-2", requester=interaction.user)
             )
             vc.stop()
             ok = await wait_until(
-                lambda: (music_cog.get_current_song(guild_id) or {}).get("title") == "fixture-2"
+                lambda: current_title(music_cog, guild_id) == "fixture-2"
             )
             if not ok:
                 raise AssertionError("skip 後 play_next 在時限內沒有切到下一首")
             step.passed = True
-            step.detail = f"目前播放中: {music_cog.get_current_song(guild_id).get('title')!r}"
+            step.detail = f"目前播放中: {music_cog.get_current_song(guild_id).title!r}"
         except Exception as e:
             step.passed = False
             step.detail = f"{type(e).__name__}: {e}"
@@ -188,17 +194,17 @@ async def run_scenario(music_cog, interaction, fixtures, results):
         step.detail = "略過：Play 失敗"
     else:
         try:
-            before_title = (music_cog.get_current_song(guild_id) or {}).get("title")
+            before_title = current_title(music_cog, guild_id)
             music_cog.set_loop_mode(guild_id, LoopMode.RECOMMEND)
             vc.stop()  # 佇列是空的 -> 應該會流進 get_recommendation()
             ok = await wait_until(
-                lambda: (music_cog.get_current_song(guild_id) or {}).get("title") != before_title,
+                lambda: current_title(music_cog, guild_id) != before_title,
                 timeout=30,
             )
             if not ok:
                 raise AssertionError("推薦模式在時限內沒有推薦出新歌並播放")
             step.passed = True
-            step.detail = f"推薦並播放中: {music_cog.get_current_song(guild_id).get('title')!r}"
+            step.detail = f"推薦並播放中: {music_cog.get_current_song(guild_id).title!r}"
         except Exception as e:
             step.passed = False
             step.detail = f"{type(e).__name__}: {e}"

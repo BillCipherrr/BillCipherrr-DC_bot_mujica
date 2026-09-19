@@ -5,6 +5,7 @@ import pytest
 from conftest import FakeGuild, FakeVoiceChannel
 
 import cogs.music as music_module
+from mujica.song import Song
 
 
 async def test_concurrent_play_next_and_after_playing_dont_double_play(
@@ -13,8 +14,8 @@ async def test_concurrent_play_next_and_after_playing_dont_double_play(
     interaction = make_interaction()
     guild_id = interaction.guild.id
     queue = music_cog.get_queue(guild_id)
-    queue.append({"url": "https://www.youtube.com/watch?v=aaa", "title": "Song A", "requester": interaction.user})
-    queue.append({"url": "https://www.youtube.com/watch?v=bbb", "title": "Song B", "requester": interaction.user})
+    queue.append(Song(url="https://www.youtube.com/watch?v=aaa", title="Song A", requester=interaction.user))
+    queue.append(Song(url="https://www.youtube.com/watch?v=bbb", title="Song B", requester=interaction.user))
 
     patch_ytdlp(result={"url": "https://stream.example/x.m4a", "title": "Resolved", "duration": 100})
 
@@ -75,7 +76,7 @@ async def test_retry_after_failure_stops_at_max_consecutive_failures(
 
     interaction = make_interaction()
     guild_id = interaction.guild.id
-    music_cog.set_current_song(guild_id, {"title": "Doomed Song", "url": "https://x", "requester": interaction.user})
+    music_cog.set_current_song(guild_id, Song(url="https://x", title="Doomed Song", requester=interaction.user))
     music_cog.get_state(guild_id).consecutive_play_failures = 2  # 再一次就達到上限
 
     await music_cog._retry_after_failure(interaction, guild_id)  # 這次會把失敗次數推到 3 == 上限

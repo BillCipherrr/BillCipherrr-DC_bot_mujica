@@ -44,13 +44,13 @@ class PlayerView(discord.ui.View):
         return f"{current_str} / {total_str}", f"`[{bar}]`"
 
     def create_embed(self, song_info, current_position=0):
-        title = song_info.get('title', '未知歌曲')
-        url = song_info.get('url', '#')
-        thumbnail = song_info.get('thumbnail', None)
-        requester = song_info.get('requester', '未知')
-        duration = song_info.get('duration', 0)
-        uploader = song_info.get('uploader', '未知作者')
-        view_count = song_info.get('view_count', 0)
+        title = song_info.title
+        url = song_info.url
+        thumbnail = song_info.thumbnail
+        requester = song_info.requester
+        duration = song_info.duration
+        uploader = song_info.uploader
+        view_count = song_info.view_count
 
         embed = discord.Embed(title=title, url=url, color=discord.Color.green())
         if thumbnail: embed.set_image(url=thumbnail)
@@ -65,7 +65,7 @@ class PlayerView(discord.ui.View):
         if queue:
             queue_list = ""
             for i, song in enumerate(list(queue)[:5]): # 最多顯示 5 首
-                queue_list += f"`{i+1}.` {song['title']}\n"
+                queue_list += f"`{i+1}.` {song.title}\n"
             if len(queue) > 5:
                 queue_list += f"\n...還有 {len(queue) - 5} 首歌"
             embed.add_field(name="🎶 待播清單", value=queue_list, inline=False)
@@ -98,16 +98,16 @@ class PlayerView(discord.ui.View):
 
         if vc and vc.is_playing():
             if current_song:
-                current_song['paused_position'] = self.music_cog.get_current_position(guild_id)
-                self.music_cog.debug_log(guild_id, "pause pressed at position=%.2f", current_song['paused_position'])
+                current_song.paused_position = self.music_cog.get_current_position(guild_id)
+                self.music_cog.debug_log(guild_id, "pause pressed at position=%.2f", current_song.paused_position)
             vc.pause()
             await self.music_cog.start_disconnect_timer(interaction)
         elif vc and vc.is_paused():
             if current_song:
-                paused_position = current_song.get('paused_position', current_song.get('resume_offset', 0))
-                current_song['resume_offset'] = paused_position
-                current_song['start_time'] = time.time()
-                current_song.pop('paused_position', None)
+                paused_position = current_song.paused_position if current_song.paused_position is not None else current_song.resume_offset
+                current_song.resume_offset = paused_position
+                current_song.start_time = time.time()
+                current_song.paused_position = None
                 self.music_cog.debug_log(guild_id, "resume pressed from position=%.2f", paused_position)
             vc.resume()
             self.music_cog.cancel_disconnect_timer(guild_id)

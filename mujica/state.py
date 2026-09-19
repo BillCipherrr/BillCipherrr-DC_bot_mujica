@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from mujica.song import Song
+
 
 class LoopMode(Enum):
     NONE = 0
@@ -18,9 +20,9 @@ class LoopMode(Enum):
 class GuildState:
     """單一 guild 的所有播放相關狀態。全部存在記憶體，重啟即消失。"""
 
-    queue: deque = field(default_factory=deque)
+    queue: deque[Song] = field(default_factory=deque)
     loop_mode: LoopMode = LoopMode.NONE
-    current_song: dict | None = None
+    current_song: Song | None = None
     volume: float = 0.5
     playlist_enabled: bool = True
     # None 表示沿用全域預設（MUSIC_DEBUG 環境變數）
@@ -41,4 +43,4 @@ class GuildState:
     # 連續播放失敗次數，避免無限重試風暴
     consecutive_play_failures: int = 0
     # 本次 session 播放過的歌曲（用於結束時的摘要）
-    session_songs: list = field(default_factory=list)
+    session_songs: list[Song] = field(default_factory=list)

@@ -66,7 +66,7 @@ FFMPEG_OPTIONS = {
 }
 
 
-def build_ffmpeg_options(song_data: dict) -> dict:
+def build_ffmpeg_options(http_headers: dict | None) -> dict:
     """根據 yt-dlp 回傳的 http_headers 建立 ffmpeg 參數，降低 403 機率。"""
     opts = dict(FFMPEG_OPTIONS)
     before = opts.get('before_options', '')
@@ -75,7 +75,7 @@ def build_ffmpeg_options(song_data: dict) -> dict:
         '-reconnect_on_http_error 4xx,5xx',
     ]
 
-    headers = song_data.get('http_headers') or {}
+    headers = http_headers or {}
     user_agent = headers.get('User-Agent') or headers.get('user-agent')
     if user_agent:
         extra_parts.append(f"-user_agent {shlex.quote(str(user_agent))}")
