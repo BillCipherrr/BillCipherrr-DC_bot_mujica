@@ -1,0 +1,59 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt ruff==0.16.1
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Pytest
+        run: pytest tests/
+
+  deploy:
+    needs: checks
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - name: Pull, install, restart
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          cd /home/user1/BillCipherrr-DC_bot_mujica
+          git fetch https://github.com/BillCipherrr/BillCipherrr-DC_bot_mujica.git main
+          git merge --ff-only "$DEPLOY_SHA"
+          /home/user1/anaconda3/envs/DC_bot/bin/pip install -r requirements.txt
+          sudo -n /usr/bin/systemctl restart dc-bot-mujica.service
+          sleep 8
+          if ! systemctl is-active --quiet dc-bot-mujica.service; then
+            journalctl -u dc-bot-mujica.service -n 40 --no-pager || true
+            echo "::error::dc-bot-mujica.service 重啟後沒有在執行"
+            exit 1
+          fi
+          echo "已部署 $DEPLOY_SHA"
