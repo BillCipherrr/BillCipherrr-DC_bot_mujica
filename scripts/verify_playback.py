@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import database
 from cogs.music import MusicCog
+from mujica.context import PlayContext
 from mujica.song import Song
 from mujica.ytdlp import _resolve_node_path
 from views.player_view import LoopMode
@@ -124,7 +125,7 @@ async def run_scenario(music_cog, interaction, fixtures, results):
         music_cog.get_queue(guild_id).append(
             Song(url=fixtures[0], title="fixture-1", requester=interaction.user)
         )
-        await music_cog.play_next(interaction)
+        await music_cog.play_next(PlayContext.from_interaction(interaction))
         ok = await wait_until(lambda: vc.is_playing())
         if not ok:
             raise AssertionError("voice_client 在時限內沒有進入 is_playing() 狀態")
@@ -260,7 +261,7 @@ async def main():
         finally:
             if state["music_cog"] is not None and state["interaction"] is not None:
                 try:
-                    await state["music_cog"].stop_and_leave(state["interaction"])
+                    await state["music_cog"].stop_and_leave(PlayContext.from_interaction(state["interaction"]))
                 except Exception:
                     traceback.print_exc()
             await client.close()

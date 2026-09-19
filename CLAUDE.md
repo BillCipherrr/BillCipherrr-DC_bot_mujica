@@ -63,6 +63,7 @@ Requires FFmpeg installed on the system and an Opus shared library available (bo
 ### `mujica/` package (no discord.py dependency, unit-testable in isolation)
 - `mujica/state.py`: `LoopMode` enum and the `GuildState` dataclass.
 - `mujica/song.py`: `Song` dataclass — a queued/current track. Fields are grouped into queued-time info (`url`, `title`, `requester`, `rec_source`), stream info filled by `apply_stream_info()` after yt-dlp resolves it, and playback-progress tracking (`start_time`, `resume_offset`, `paused_position`). Use attributes, not dict access.
+- `mujica/context.py`: `PlayContext` (frozen dataclass: `guild`, `channel`, `user`) — the minimal environment the play pipeline needs. `play_next`, `_handle_after_playing`, `_retry_after_failure`, `start_disconnect_timer`, `stop_and_leave` and `PlayerView` take a `PlayContext`, not a `discord.Interaction`; build one with `PlayContext.from_interaction(interaction)` at the slash-command/button boundary. `ctx.user` is who triggered this play run: recommendations (personal-history tier) and voice reconnects follow that user. Button callbacks still use their own fresh `interaction` for `response`/`followup`.
 - `mujica/ytdlp.py`: `YDL_OPTS_INFO_EXTRACT` / `YDL_OPTS_STREAM`, node runtime resolution, `build_ffmpeg_options(http_headers)`.
 - `mujica/urls.py`: `normalize_youtube_url`, `extract_video_id`, `normalize_title_for_dedup`.
 
