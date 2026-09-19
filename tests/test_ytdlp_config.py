@@ -31,14 +31,12 @@ def test_resolve_node_path_none_when_nothing_found(monkeypatch):
 
 
 def test_build_ffmpeg_options_injects_user_agent_and_headers():
-    song = {
-        "http_headers": {
-            "User-Agent": "Mozilla/5.0 Test",
-            "Referer": "https://example.com",
-            "Accept-Encoding": "gzip",  # 必須被排除在 -headers 區塊之外
-        }
+    headers = {
+        "User-Agent": "Mozilla/5.0 Test",
+        "Referer": "https://example.com",
+        "Accept-Encoding": "gzip",  # 必須被排除在 -headers 區塊之外
     }
-    opts = ytdlp_module.build_ffmpeg_options(song)
+    opts = ytdlp_module.build_ffmpeg_options(headers)
     assert "-user_agent" in opts["before_options"]
     assert "Mozilla/5.0 Test" in opts["before_options"]
     assert "Referer: https://example.com" in opts["before_options"]
@@ -47,7 +45,7 @@ def test_build_ffmpeg_options_injects_user_agent_and_headers():
 
 
 def test_build_ffmpeg_options_no_headers_leaves_base_options_intact():
-    opts = ytdlp_module.build_ffmpeg_options({})
+    opts = ytdlp_module.build_ffmpeg_options(None)
     assert "-user_agent" not in opts["before_options"]
     assert opts["before_options"].startswith("-reconnect 1 -reconnect_streamed 1")
 

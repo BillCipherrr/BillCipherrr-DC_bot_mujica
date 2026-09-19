@@ -14,6 +14,7 @@ from discord.ext import commands, tasks
 from googleapiclient.discovery import build
 
 import database
+from mujica.song import Song
 from mujica.state import GuildState
 from mujica.urls import (
     extract_video_id,
@@ -202,10 +203,10 @@ class MusicCog(commands.Cog):
         if not vc or not song:
             return 0
         if vc.is_paused():
-            return song.get('paused_position', song.get('resume_offset', 0))
+            return song.paused_position if song.paused_position is not None else song.resume_offset
         if vc.is_playing():
-            return (time.time() - song.get('start_time', 0)) + song.get('resume_offset', 0)
-        return song.get('resume_offset', 0)
+            return (time.time() - song.start_time) + song.resume_offset
+        return song.resume_offset
 
     def start_progress_task(self, guild_id: int):
         state = self.get_state(guild_id)
@@ -317,22 +318,16 @@ class MusicCog(commands.Cog):
             loop = asyncio.get_event_loop()
             # 使用 YDL_OPTS_STREAM 獲取單一歌曲的串流 URL
             with yt_dlp.YoutubeDL(YDL_OPTS_STREAM) as ydl:
-                song_data = await loop.run_in_executor(None, lambda: ydl.extract_info(next_song['url'], download=False))
+                song_data = await loop.run_in_executor(None, lambda: ydl.extract_info(next_song.url, download=False))
 
-            # 更新歌曲詳細資訊 (確保使用 'url' 鍵)
-            next_song['stream_url'] = song_data['url']
-            next_song['title'] = song_data.get('title', next_song.get('title', '未知歌曲')) # 更新標題以防萬一
-            next_song['duration'] = song_data.get('duration', 0)
-            next_song['thumbnail'] = song_data.get('thumbnail')
-            next_song['uploader'] = song_data.get('uploader', '未知作者')
-            next_song['view_count'] = song_data.get('view_count', 0)
-            next_song['http_headers'] = song_data.get('http_headers', {})
+            # 更新歌曲詳細資訊
+            next_song.apply_stream_info(song_data)
 
-            next_song['start_time'] = time.time()
-            next_song['resume_offset'] = 0
+            next_song.start_time = time.time()
+            next_song.resume_offset = 0
 
-            ffmpeg_options = build_ffmpeg_options(next_song)
-            source = discord.FFmpegPCMAudio(next_song['stream_url'], **ffmpeg_options)
+            ffmpeg_options = build_ffmpeg_options(next_song.http_headers)
+            source = discord.FFmpegPCMAudio(next_song.stream_url, **ffmpeg_options)
             volume_source = discord.PCMVolumeTransformer(source, volume=self.get_volume(guild_id))
 
             def after_playing(error):
@@ -346,12 +341,12 @@ class MusicCog(commands.Cog):
 
             voice_client.play(volume_source, after=after_playing)
 
-            database.log_song_play(guild_id, next_song['requester'].id, next_song)
-            self.get_state(guild_id).session_songs.append({
-                'title': next_song['title'],
-                'url': next_song['url'],
-                'requester': next_song['requester'],
-            })
+            database.log_song_play(
+                guild_id,
+                next_song.requester.id,
+                {'url': next_song.url, 'title': next_song.title, 'duration': next_song.duration},
+            )
+            self.get_state(guild_id).session_songs.append(next_song)
 
             view = PlayerView(self, interaction)
             self.set_player_view(guild_id, view)
@@ -372,18 +367,18 @@ class MusicCog(commands.Cog):
             # 要求再 play 一次）。這種情況重試只會不斷 spawn 新的 ffmpeg 行程、
             # 對來源連續轟炸，因此不遞迴呼叫 play_next，只記錄並放棄這一輪，
             # 交由既有的 after_playing 回呼或使用者操作（skip/重新連線）接手。
-            self.logger.error("play_next: voice_client 狀態不一致，放棄重試 for %s: %s", next_song.get('title'), e)
+            self.logger.error("play_next: voice_client 狀態不一致，放棄重試 for %s: %s", next_song.title, e)
             return
 
         except Exception as e:
-            self.logger.error("play_next error for %s", next_song.get('title'), exc_info=e)
+            self.logger.error("play_next error for %s", next_song.title, exc_info=e)
             err_msg = str(e)
             if '403' in err_msg or 'Forbidden' in err_msg:
                 err_msg += (
                     "\n可能原因：來源要求登入憑證或特定請求標頭。"
                     "\n可嘗試設定環境變數 YTDLP_COOKIEFILE 指向瀏覽器匯出的 cookies.txt。"
                 )
-            await interaction.channel.send(f"播放 **{next_song['title']}** 時發生錯誤: {err_msg}")
+            await interaction.channel.send(f"播放 **{next_song.title}** 時發生錯誤: {err_msg}")
             await self._retry_after_failure(interaction, guild_id)
 
     async def _handle_after_playing(self, interaction: discord.Interaction, guild_id: int, error: Exception | None):
@@ -393,7 +388,7 @@ class MusicCog(commands.Cog):
         無節制地立即再呼叫 play_next 造成風暴或（在來源被節流卡住時）長時間卡死。"""
         if error:
             failed_song = self.get_current_song(guild_id)
-            title = failed_song.get('title', '未知歌曲') if failed_song else '未知歌曲'
+            title = failed_song.title if failed_song else '未知歌曲'
             await interaction.channel.send(f"播放 **{title}** 時中斷: {error}")
             await self._retry_after_failure(interaction, guild_id)
         else:
@@ -414,17 +409,17 @@ class MusicCog(commands.Cog):
         asyncio.create_task(self.play_next(interaction))
 
     # --- 推薦功能 ---
-    async def get_recommendation(self, song_info: dict, requester: discord.User):
+    async def get_recommendation(self, song_info: Song, requester: discord.User) -> Song:
         guild_id = requester.guild.id
 
         # --- 建立去重集合（佇列中 + 目前播放 + 最近 20 首）---
         played_ids = {
-            extract_video_id(s.get('url', '') or s.get('webpage_url', ''))
+            extract_video_id(s.url or '')
             for s in self.get_queue(guild_id)
         }
         current = self.get_current_song(guild_id)
         if current:
-            played_ids.add(extract_video_id(current.get('url', '') or current.get('webpage_url', '')))
+            played_ids.add(extract_video_id(current.url or ''))
         recent_rows = database.get_recent_songs(guild_id, limit=20)
         played_ids.update(extract_video_id(r['youtube_url']) for r in recent_rows if r)
         played_titles = {normalize_title_for_dedup(r['title']) for r in recent_rows if r and r['title']}
@@ -439,30 +434,30 @@ class MusicCog(commands.Cog):
         user_candidates = [r for r in user_top if not is_duplicate(r['youtube_url'], r['title'])]
         if user_candidates:
             chosen = random.choice(user_candidates[:5])
-            return {
-                'url': chosen['youtube_url'],
-                'title': chosen['title'],
-                'requester': self.bot.user,
-                '_rec_source': 'user_history'
-            }
+            return Song(
+                url=chosen['youtube_url'],
+                title=chosen['title'],
+                requester=self.bot.user,
+                rec_source='user_history',
+            )
 
         # --- 階段 2：從伺服器熱門挑選 ---
         guild_top = database.get_guild_top_songs(guild_id, limit=20)
         guild_candidates = [r for r in guild_top if not is_duplicate(r['youtube_url'], r['title'])]
         if guild_candidates:
             chosen = random.choice(guild_candidates[:5])
-            return {
-                'url': chosen['youtube_url'],
-                'title': chosen['title'],
-                'requester': self.bot.user,
-                '_rec_source': 'guild_top'
-            }
+            return Song(
+                url=chosen['youtube_url'],
+                title=chosen['title'],
+                requester=self.bot.user,
+                rec_source='guild_top',
+            )
 
         # --- 階段 3：fallback 到 YouTube API ---
         if not youtube:
             raise RecommendationError("歷史記錄不足且 YouTube API 未初始化，無法推薦歌曲。")
 
-        video_id = extract_video_id(song_info.get('url', '') or song_info.get('webpage_url', ''))
+        video_id = extract_video_id(song_info.url or '')
         if not video_id:
             raise RecommendationError("無法解析當前歌曲的 videoId。")
 
@@ -472,7 +467,7 @@ class MusicCog(commands.Cog):
             return youtube.search().list(**params).execute()
 
         # relatedToVideoId 自 2023/8 已廢棄，直接改用歌曲標題做關鍵字搜尋
-        fallback_query = song_info.get('title') or song_info.get('uploader') or ''
+        fallback_query = song_info.title or song_info.uploader or ''
         params_search = {
             'part': 'snippet',
             'type': 'video',
@@ -506,12 +501,12 @@ class MusicCog(commands.Cog):
 
         chosen = chosen_list[0]
         vid = to_video_id(chosen)
-        return {
-            'url': f"https://www.youtube.com/watch?v={vid}",
-            'title': chosen['snippet']['title'],
-            'requester': self.bot.user,
-            '_rec_source': 'youtube_api'
-        }
+        return Song(
+            url=f"https://www.youtube.com/watch?v={vid}",
+            title=chosen['snippet']['title'],
+            requester=self.bot.user,
+            rec_source='youtube_api',
+        )
 
     # --- /play 指令 (已修正) ---
     @app_commands.command(name="play", description="播放歌曲或播放列表")
@@ -549,19 +544,19 @@ class MusicCog(commands.Cog):
                     if entry_url and not entry_url.startswith('http'):
                         entry_url = f"https://www.youtube.com/watch?v={entry_url}"
                     entry_url = normalize_youtube_url(entry_url) if entry_url else None
-                    queue.append({
-                        'url': entry_url,
-                        'title': entry.get('title', '未知歌曲'),
-                        'requester': interaction.user
-                    })
+                    queue.append(Song(
+                        url=entry_url,
+                        title=entry.get('title', '未知歌曲'),
+                        requester=interaction.user,
+                    ))
             else:
-                song_info = {
-                    'url': info.get('webpage_url', normalize_youtube_url(url)), 
-                    'title': info.get('title', '未知歌曲'), 
-                    'requester': interaction.user
-                }
-                queue.append(song_info)
-                await interaction.followup.send(f"✅ 已將 **{song_info['title']}** 加入佇列。", ephemeral=True)
+                song = Song(
+                    url=info.get('webpage_url', normalize_youtube_url(url)),
+                    title=info.get('title', '未知歌曲'),
+                    requester=interaction.user,
+                )
+                queue.append(song)
+                await interaction.followup.send(f"✅ 已將 **{song.title}** 加入佇列。", ephemeral=True)
             
             if not is_playing:
                 self.cancel_disconnect_timer(interaction.guild.id)
@@ -582,11 +577,11 @@ class MusicCog(commands.Cog):
             return
         lines = []
         for i, song in enumerate(songs[:20], 1):
-            vid = extract_video_id(song['url'])
-            link = f"https://youtu.be/{vid}" if vid else song['url']
-            requester = song['requester']
+            vid = extract_video_id(song.url)
+            link = f"https://youtu.be/{vid}" if vid else song.url
+            requester = song.requester
             requester_str = requester.mention if isinstance(requester, (discord.Member, discord.User)) else str(requester)
-            lines.append(f"`{i}.` [{song['title']}]({link}) — {requester_str}")
+            lines.append(f"`{i}.` [{song.title}]({link}) — {requester_str}")
         if len(songs) > 20:
             lines.append(f"*...還有 {len(songs) - 20} 首未顯示*")
         embed = discord.Embed(
