@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mujica 服務條款</title>
+<style>
+  :root{
+    --bg:#faf8f5;
+    --surface:#ffffff;
+    --ink:#1c1a22;
+    --ink-soft:#5a5566;
+    --ink-faint:#8b8596;
+    --accent:#6952c9;
+    --accent-soft:#efe9fc;
+    --border:#e6e1ec;
+    --note-bg:#f4effa;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#131019;
+      --surface:#1a1623;
+      --ink:#f1eef7;
+      --ink-soft:#b6afc7;
+      --ink-faint:#847d97;
+      --accent:#a892f0;
+      --accent-soft:#241f36;
+      --border:#2c2739;
+      --note-bg:#211c30;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#131019;
+    --surface:#1a1623;
+    --ink:#f1eef7;
+    --ink-soft:#b6afc7;
+    --ink-faint:#847d97;
+    --accent:#a892f0;
+    --accent-soft:#241f36;
+    --border:#2c2739;
+    --note-bg:#211c30;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body{
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Source Sans 3", "Noto Sans TC", -apple-system, BlinkMacSystemFont, sans-serif;
+    line-height: 1.75;
+    padding: 0 16px;
+  }
+  img{ max-width: 100%; }
+  .page{
+    max-width: 760px;
+    margin: 0 auto;
+    padding-block: 56px 96px;
+  }
+
+  .eyebrow{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 18px;
+  }
+  .eyebrow svg{ width:16px; height:16px; flex-shrink:0; }
+
+  h1{
+    font-family: "Literata", "Noto Serif TC", Georgia, serif;
+    font-weight: 600;
+    font-size: clamp(1.9rem, 5vw, 2.6rem);
+    line-height: 1.25;
+    text-wrap: balance;
+    margin: 0 0 14px;
+    color: var(--ink);
+  }
+  .subtitle{
+    color: var(--ink-soft);
+    font-size: 1.02rem;
+    max-width: 56ch;
+    margin: 0 0 28px;
+  }
+
+  .meta-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap: 10px 28px;
+    padding: 16px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 40px;
+    font-size: 0.88rem;
+    color: var(--ink-soft);
+  }
+  .meta-row div{ display:flex; flex-direction:column; gap:2px; }
+  .meta-row strong{ color: var(--ink); font-weight: 600; font-size: 0.92rem; }
+
+  nav.toc{
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 22px;
+    margin-bottom: 48px;
+  }
+  nav.toc h2{
+    font-size: 0.78rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 12px;
+    font-weight: 700;
+  }
+  nav.toc ol{
+    margin:0; padding: 0 0 0 1.1em;
+    columns: 2;
+    column-gap: 28px;
+    font-size: 0.92rem;
+  }
+  nav.toc li{ break-inside: avoid; margin-bottom: 7px; }
+  nav.toc a{ color: var(--ink-soft); text-decoration:none; }
+  nav.toc a:hover{ color: var(--accent); text-decoration:underline; }
+
+  section{
+    margin-bottom: 40px;
+    scroll-margin-top: 20px;
+  }
+  section h2{
+    font-family: "Literata", "Noto Serif TC", Georgia, serif;
+    font-size: 1.28rem;
+    font-weight: 600;
+    display:flex;
+    align-items:baseline;
+    gap: 12px;
+    margin: 0 0 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  section h2 .num{
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+    font-family: "Source Sans 3", sans-serif;
+    font-weight: 700;
+    font-size: 0.9rem;
+    background: var(--accent-soft);
+    border-radius: 999px;
+    width: 26px; height: 26px;
+    display:inline-flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  section p{ margin: 0 0 12px; color: var(--ink); }
+  section p.soft{ color: var(--ink-soft); }
+  section ul{ margin: 0 0 12px; padding-left: 1.3em; }
+  section li{ margin-bottom: 8px; }
+  section h3{
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 18px 0 8px;
+    color: var(--ink);
+  }
+
+  .note{
+    background: var(--note-bg);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 10px 10px 0;
+    padding: 14px 18px;
+    font-size: 0.92rem;
+    color: var(--ink-soft);
+    margin: 14px 0;
+  }
+  .note strong{ color: var(--ink); }
+
+  code{
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--accent-soft);
+    color: var(--accent);
+    padding: 1px 6px;
+    border-radius: 5px;
+    font-size: 0.85em;
+  }
+
+  a.contact{
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: none;
+    border-bottom: 1px solid currentColor;
+  }
+
+  footer{
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    color: var(--ink-faint);
+    font-size: 0.85rem;
+  }
+
+  @media (max-width: 480px){
+    nav.toc ol{ columns: 1; }
+    .meta-row{ flex-direction: column; gap: 12px; }
+  }
+</style>
+
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Literata:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="page">
+  <div class="eyebrow">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+    Mujica · Discord 音樂機器人
+  </div>
+  <h1>服務條款</h1>
+  <p class="subtitle">本條款規範您（「使用者」）使用 Mujica Discord 機器人（「本服務」）的權利與義務。將本機器人加入伺服器、或於伺服器中使用其任何指令或功能，即表示您已閱讀、理解並同意受本條款拘束。</p>
+
+  <div class="meta-row">
+    <div><strong>生效日期</strong><span>2026 年 9 月 18 日</span></div>
+    <div><strong>服務性質</strong><span>個人開發、免費提供、公開邀請</span></div>
+    <div><strong>聯絡方式</strong><span><a class="contact" href="mailto:wasd361571@gmail.com">wasd361571@gmail.com</a></span></div>
+  </div>
+
+  <nav class="toc" aria-label="條款目錄">
+    <h2>目錄</h2>
+    <ol>
+      <li><a href="#s1">服務內容</a></li>
+      <li><a href="#s2">使用資格與帳號</a></li>
+      <li><a href="#s3">使用者行為規範</a></li>
+      <li><a href="#s4">第三方內容與智慧財產權</a></li>
+      <li><a href="#s5">資料蒐集與使用</a></li>
+      <li><a href="#s6">第三方服務</a></li>
+      <li><a href="#s7">服務可用性與變更</a></li>
+      <li><a href="#s8">免責聲明與責任限制</a></li>
+      <li><a href="#s9">服務終止</a></li>
+      <li><a href="#s10">條款變更</a></li>
+      <li><a href="#s11">其他規定</a></li>
+      <li><a href="#s12">聯絡我們</a></li>
+    </ol>
+  </nav>
+
+  <section id="s1">
+    <h2><span class="num">1</span>服務內容</h2>
+    <p>Mujica 是一款免費、非營利的個人開發 Discord 機器人，主要提供以下功能：</p>
+    <ul>
+      <li>自語音串流網站（透過 yt-dlp）播放音訊，支援排隊、跳過、暫停/繼續等基本播放控制。</li>
+      <li>多種循環模式，包含單曲循環、隊列循環，以及依播放紀錄與 YouTube 資料 API 產生的推薦循環模式。</li>
+      <li>每個伺服器獨立的音量與播放清單設定。</li>
+      <li>播放紀錄查詢（歷史紀錄、個人/伺服器熱門歌曲統計）。</li>
+      <li>以 MiniMax 語音合成 API 提供的 <code>/tts</code> 文字轉語音指令。</li>
+    </ul>
+    <p class="soft">本服務目前公開邀請，任何 Discord 伺服器管理員皆可將 Mujica 加入其伺服器使用。</p>
+  </section>
+
+  <section id="s2">
+    <h2><span class="num">2</span>使用資格與帳號</h2>
+    <p>使用本服務即表示您具備使用 Discord 平台的資格，並已符合 <a class="contact" href="https://discord.com/terms" target="_blank" rel="noopener">Discord 服務條款</a>與 <a class="contact" href="https://discord.com/guidelines" target="_blank" rel="noopener">社群守則</a>所要求之最低年齡與帳號規範。本服務不另行建立獨立帳號系統，所有互動皆透過您既有的 Discord 帳號進行。</p>
+    <p>伺服器管理員負責決定是否將本機器人加入其伺服器，並可自行設定使用本機器人的權限範圍（例如限制特定身分組或頻道）。</p>
+  </section>
+
+  <section id="s3">
+    <h2><span class="num">3</span>使用者行為規範</h2>
+    <p>使用本服務時，您同意不得從事下列行為：</p>
+    <ul>
+      <li>利用本服務散布違法、侵權、色情、仇恨言論或其他違反 Discord 社群守則之內容。</li>
+      <li>嘗試干擾、破壞本服務的正常運作，包含但不限於大量發送指令、利用程式漏洞、或對播放佇列進行濫用性灌爆。</li>
+      <li>將本服務用於規避著作權保護、未經授權散布受版權保護之作品，或其他違反相關法令之用途。</li>
+      <li>嘗試未經授權存取本服務之原始碼、伺服器、資料庫或其他基礎設施。</li>
+    </ul>
+    <p class="soft">違反上述規範時，開發者保留於個別伺服器中限制、拒絕提供服務，或將機器人自該伺服器移除之權利，且不另行通知。</p>
+  </section>
+
+  <section id="s4">
+    <h2><span class="num">4</span>第三方內容與智慧財產權</h2>
+    <p>本服務播放之音訊內容係透過 yt-dlp 由使用者所提供之連結或搜尋關鍵字，自 YouTube 等第三方網站擷取串流，本服務本身不儲存、不重新散布任何音訊檔案，亦不對該等內容擁有著作權或授權。</p>
+    <p>該等音訊內容之著作權歸原始權利人所有。使用者應自行確保其播放、分享行為符合著作權法及該內容來源網站之使用條款；因不當使用而生之法律責任，由使用者自行承擔，與開發者無涉。</p>
+    <p>若您是著作權人，認為本服務播放之內容侵害您的權利，請透過下方聯絡方式與開發者聯繫，我們將儘速處理。</p>
+  </section>
+
+  <section id="s5">
+    <h2><span class="num">5</span>資料蒐集與使用</h2>
+    <p>為提供播放紀錄查詢與推薦功能，本服務會於自建之 SQLite 資料庫中，依「伺服器」與「使用者」範圍記錄下列資訊：</p>
+    <ul>
+      <li>播放過的歌曲標題與來源網址。</li>
+      <li>點播的 Discord 使用者 ID、所屬伺服器 ID，以及播放時間戳記。</li>
+    </ul>
+    <p>上述資料僅用於下列目的，不會出售、出租或用於本服務以外之商業行銷用途：</p>
+    <ul>
+      <li>顯示個人或伺服器的播放歷史與熱門歌曲統計（<code>/history</code> 相關指令）。</li>
+      <li>依歷史紀錄產生個人化或伺服器層級的歌曲推薦。</li>
+    </ul>
+    <div class="note"><strong>不同伺服器的資料彼此獨立</strong>：所有查詢皆以伺服器 ID 區隔，不會出現跨伺服器的資料混用或外洩。</div>
+    <p>若您希望移除特定紀錄，可透過下方聯絡方式提出申請，開發者將協助自資料庫中刪除相關資料。</p>
+  </section>
+
+  <section id="s6">
+    <h2><span class="num">6</span>第三方服務</h2>
+    <p>本服務為提供功能，會與下列第三方服務互動，該等服務各自受其自身條款與隱私權政策規範：</p>
+    <ul>
+      <li><strong>YouTube / yt-dlp 支援之串流網站</strong>：用於解析與播放音訊來源。</li>
+      <li><strong>YouTube Data API</strong>：用於在歷史紀錄不足時，輔助產生歌曲推薦。</li>
+      <li><strong>MiniMax 語音合成 API</strong>：使用 <code>/tts</code> 指令時，您輸入的文字內容會傳送至 MiniMax 以產生語音，請避免輸入您不希望傳送給第三方服務之敏感內容。</li>
+    </ul>
+  </section>
+
+  <section id="s7">
+    <h2><span class="num">7</span>服務可用性與變更</h2>
+    <p>本服務由個人開發者利用業餘時間維護，<strong>以「現狀」（as is）方式免費提供</strong>，不保證全天候不中斷運作、零錯誤或特定可用性水準。服務可能因維護、升級、第三方服務異動（例如 yt-dlp 或 Discord API 變更）或其他不可抗力因素而暫時中斷。</p>
+    <p>開發者保留隨時修改、暫停或終止本服務全部或部分功能之權利，且無須事先通知。</p>
+  </section>
+
+  <section id="s8">
+    <h2><span class="num">8</span>免責聲明與責任限制</h2>
+    <p>在法律允許之最大範圍內，開發者不對因使用或無法使用本服務所生之任何直接、間接、附帶或衍生性損害負責，包含但不限於資料遺失、服務中斷，或因第三方內容所生之任何爭議。</p>
+    <p class="soft">本服務為非營利之個人專案，不提供任何明示或默示之品質、適售性或特定用途適用性保證。</p>
+  </section>
+
+  <section id="s9">
+    <h2><span class="num">9</span>服務終止</h2>
+    <p>伺服器管理員可隨時將 Mujica 自其伺服器移除，以終止該伺服器對本服務的使用；使用者亦可隨時停止使用本服務之任何指令。</p>
+    <p>開發者亦保留於認定使用者違反本條款、或基於維運考量時，拒絕對特定伺服器或使用者提供服務之權利。</p>
+  </section>
+
+  <section id="s10">
+    <h2><span class="num">10</span>條款變更</h2>
+    <p>開發者可能不定期修訂本條款，修訂後的條款將於本頁面更新後立即生效。若您於條款修訂後繼續使用本服務，即視為同意接受修訂後之條款。建議您不定期查閱本頁面以了解最新內容。</p>
+  </section>
+
+  <section id="s11">
+    <h2><span class="num">11</span>其他規定</h2>
+    <p>本條款構成您與開發者間就使用本服務之完整協議。若本條款任一條款經認定為無效或不可執行，不影響其餘條款之效力。本條款依一般公認之誠信原則解釋，如發生爭議，雙方應先行以善意協商方式解決。</p>
+  </section>
+
+  <section id="s12">
+    <h2><span class="num">12</span>聯絡我們</h2>
+    <p>若您對本條款有任何疑問、申訴，或需要協助（例如資料刪除請求、著作權疑慮），請透過以下方式與開發者聯繫：</p>
+    <p><a class="contact" href="mailto:wasd361571@gmail.com">wasd361571@gmail.com</a></p>
+  </section>
+
+  <footer>
+    Mujica 為個人開發之 Discord 音樂機器人專案，非 Discord Inc. 官方產品，亦與任何唱片公司或音樂平台無關聯。
+  </footer>
+</div>
+</body>
+</html>

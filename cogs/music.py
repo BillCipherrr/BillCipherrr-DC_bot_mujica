@@ -1,8 +1,10 @@
 import asyncio
+import glob
 import logging
 import os
 import random
 import shlex
+import shutil
 import time
 from collections import deque
 from urllib.parse import parse_qs, urlparse
@@ -37,11 +39,41 @@ else:
 
 # --- 正確的 yt-dlp 設定 ---
 
+# 系統本身沒有安裝 deno（yt-dlp 預設唯一啟用的 JS runtime），但已有 node（經 nvm 安裝，
+# 版本 >= 20 符合 yt-dlp 需求），因此改用 node 讓 yt-dlp 能解密簽章、嘗試 web/web safari
+# 等 client，而不是只能退回較弱、容易被 403 的 android_vr client。
+#
+# yt-dlp 只用字面上的 "node" 去 PATH 找執行檔；但 bot 長時間執行的行程（例如透過
+# nohup/screen/tmux/systemd 啟動）未必繼承有把 nvm 的 node 目錄加進 PATH 的互動式
+# shell 環境，一旦找不到 node 就會靜默退回 JS-less 的 android_vr client，導致串流
+# URL 經常被 YouTube 回 403。因此在載入模組時就把 node 解析成絕對路徑寫死，
+# 不依賴執行當下的 PATH。
+#
+# 注意：這台機器 /usr/bin/node 是系統套件裝的舊版 (v12)，低於 yt-dlp 要求的
+# >= 20，若單純用 shutil.which('node')，只要 PATH 沒把 nvm 目錄排在 /usr/bin
+# 前面，就會撿到這個版本過舊、會被 yt-dlp 判定為不支援的 node，症狀跟完全找
+# 不到 node 一樣（一樣印出 "No supported JavaScript runtime"）。因此優先找
+# nvm 安裝的版本，找不到才退回 PATH 查找。
+def _resolve_node_path() -> str | None:
+    nvm_candidates = sorted(
+        glob.glob(os.path.expanduser('~/.nvm/versions/node/*/bin/node')),
+        reverse=True,  # 取版本號較新的
+    )
+    if nvm_candidates:
+        return nvm_candidates[0]
+    return shutil.which('node')
+
+_NODE_PATH = _resolve_node_path()
+YDL_JS_RUNTIMES = {'node': {'path': _NODE_PATH}} if _NODE_PATH else {}
+if not _NODE_PATH:
+    print("警告：找不到 node 執行檔，yt-dlp 將退回 JS-less 的 android_vr client，串流較容易遇到 403。")
+
 # 用於 /play 指令：快速提取資訊，允許播放列表
 YDL_OPTS_INFO_EXTRACT = {
     'quiet': True,
-    'extract_flat': True, 
+    'extract_flat': True,
     'noplaylist': False, # <-- 允許播放列表
+    'js_runtimes': YDL_JS_RUNTIMES,
 }
 
 # 用於 play_next 函式：獲取單一歌曲的串流，禁止播放列表
@@ -49,7 +81,10 @@ YDL_OPTS_STREAM = {
     'format': 'bestaudio/best',
     'quiet': True,
     'noplaylist': True, # <-- 禁止播放列表
-    'source_address': '0.0.0.0'
+    'source_address': '0.0.0.0',
+    'socket_timeout': 10,  # 避免來源被節流/擋下時 extract_info 無限期卡住，拖住 per-guild play_lock
+    'retries': 2,
+    'js_runtimes': YDL_JS_RUNTIMES,
 }
 
 # 允許透過環境變數提供 cookies，處理需登入/受限資源（例如部份 Google Drive 連結）
@@ -62,6 +97,13 @@ FFMPEG_OPTIONS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
     'options': '-vn',
 }
+
+# play_next 連續失敗時的重試節流設定，避免對來源（YouTube 等）連續轟炸。
+# 每次重試 get_recommendation 都會挑一首「不同」的歌（有 dedup），單一影片被
+# YouTube SABR-only 實驗擋下並不代表下一首也會失敗，因此上限給高一點、
+# 讓自動播放能撐過一連串倒楣的 403，而不用使用者手動重新觸發。
+MAX_CONSECUTIVE_PLAY_FAILURES = 8
+PLAY_FAILURE_RETRY_DELAY = 2  # 秒
 
 
 def build_ffmpeg_options(song_data: dict) -> dict:
@@ -142,6 +184,8 @@ class MusicCog(commands.Cog):
         self.disconnect_timers = {}
         self.playlist_enabled = {}
         self.voice_locks = {}  # per-guild 語音連線鎖，防止競態
+        self.play_locks = {}  # per-guild play_next 鎖，防止 after_playing 回呼與例外重試互相搶跑
+        self.consecutive_play_failures = {}  # per-guild 連續播放失敗次數，避免無限重試風暴
         self.session_songs = {}  # 記錄本次 session 播放的歌曲
         self.debug_modes = {}
         self.global_debug_default = os.getenv("MUSIC_DEBUG", "false").lower() in ("1", "true", "yes", "on")
@@ -162,6 +206,14 @@ class MusicCog(commands.Cog):
         if guild_id not in self.voice_locks:
             self.voice_locks[guild_id] = asyncio.Lock()
         return self.voice_locks[guild_id]
+
+    def _get_play_lock(self, guild_id: int) -> asyncio.Lock:
+        """取得或建立 per-guild 的 play_next 鎖，避免同一 guild 同時有多個
+        play_next() 在跑（例如 after_playing 回呼與例外重試同時觸發），
+        導致互相搶著呼叫 voice_client.play() 而炸出 Already playing audio。"""
+        if guild_id not in self.play_locks:
+            self.play_locks[guild_id] = asyncio.Lock()
+        return self.play_locks[guild_id]
 
     async def ensure_voice_connection(self, channel: discord.VoiceChannel) -> discord.VoiceClient:
         """安全地連接到語音頻道，處理 stale client、4017、timeout 等情況。
@@ -320,6 +372,14 @@ class MusicCog(commands.Cog):
     # --- 核心播放邏輯 (已修正) ---
     async def play_next(self, interaction: discord.Interaction):
         guild_id = interaction.guild.id
+        # 加鎖：確保同一 guild 同時只有一個 play_next 在執行，避免 after_playing
+        # 回呼與例外重試（或其他觸發來源）互相搶跑，同時呼叫 voice_client.play()
+        # 而炸出 discord.errors.ClientException: Already playing audio。
+        async with self._get_play_lock(guild_id):
+            await self._play_next_locked(interaction)
+
+    async def _play_next_locked(self, interaction: discord.Interaction):
+        guild_id = interaction.guild.id
         self.stop_progress_task(guild_id)
         voice_client = interaction.guild.voice_client
         self.debug_log(guild_id, "play_next called: queue=%d loop_mode=%s has_current=%s", len(self.get_queue(guild_id)), self.get_loop_mode(guild_id).name, bool(self.get_current_song(guild_id)))
@@ -381,7 +441,7 @@ class MusicCog(commands.Cog):
             # 使用 YDL_OPTS_STREAM 獲取單一歌曲的串流 URL
             with yt_dlp.YoutubeDL(YDL_OPTS_STREAM) as ydl:
                 song_data = await loop.run_in_executor(None, lambda: ydl.extract_info(next_song['url'], download=False))
-            
+
             # 更新歌曲詳細資訊 (確保使用 'url' 鍵)
             next_song['stream_url'] = song_data['url']
             next_song['title'] = song_data.get('title', next_song.get('title', '未知歌曲')) # 更新標題以防萬一
@@ -390,20 +450,22 @@ class MusicCog(commands.Cog):
             next_song['uploader'] = song_data.get('uploader', '未知作者')
             next_song['view_count'] = song_data.get('view_count', 0)
             next_song['http_headers'] = song_data.get('http_headers', {})
-            
+
             next_song['start_time'] = time.time()
             next_song['resume_offset'] = 0
 
             ffmpeg_options = build_ffmpeg_options(next_song)
             source = discord.FFmpegPCMAudio(next_song['stream_url'], **ffmpeg_options)
             volume_source = discord.PCMVolumeTransformer(source, volume=self.get_volume(guild_id))
-            
+
             def after_playing(error):
                 if error:
                     self.logger.error("[Guild %s] Player after callback error: %s", guild_id, error)
                 else:
                     self.debug_log(guild_id, "after callback fired without error")
-                asyncio.run_coroutine_threadsafe(self.play_next(interaction), self.bot.loop)
+                asyncio.run_coroutine_threadsafe(
+                    self._handle_after_playing(interaction, guild_id, error), self.bot.loop
+                )
 
             voice_client.play(volume_source, after=after_playing)
 
@@ -428,6 +490,14 @@ class MusicCog(commands.Cog):
             self.set_player_message(guild_id, player_message)
             self.start_progress_task(guild_id)
 
+        except discord.errors.ClientException as e:
+            # voice_client 狀態已不一致（例如上一個 AudioPlayer 尚未清乾淨就被
+            # 要求再 play 一次）。這種情況重試只會不斷 spawn 新的 ffmpeg 行程、
+            # 對來源連續轟炸，因此不遞迴呼叫 play_next，只記錄並放棄這一輪，
+            # 交由既有的 after_playing 回呼或使用者操作（skip/重新連線）接手。
+            self.logger.error("play_next: voice_client 狀態不一致，放棄重試 for %s: %s", next_song.get('title'), e)
+            return
+
         except Exception as e:
             self.logger.error("play_next error for %s", next_song.get('title'), exc_info=e)
             err_msg = str(e)
@@ -437,7 +507,34 @@ class MusicCog(commands.Cog):
                     "\n可嘗試設定環境變數 YTDLP_COOKIEFILE 指向瀏覽器匯出的 cookies.txt。"
                 )
             await interaction.channel.send(f"播放 **{next_song['title']}** 時發生錯誤: {err_msg}")
-            asyncio.run_coroutine_threadsafe(self.play_next(interaction), self.bot.loop)
+            await self._retry_after_failure(interaction, guild_id)
+
+    async def _handle_after_playing(self, interaction: discord.Interaction, guild_id: int, error: Exception | None):
+        """voice_client.play() 的 after 回呼實際處理邏輯（已跳到 event loop 執行）。
+        與 _play_next_locked 的 except 區塊共用同一套節流重試機制
+        (_retry_after_failure)，避免 403 等中途串流失敗繞過重試上限/延遲，
+        無節制地立即再呼叫 play_next 造成風暴或（在來源被節流卡住時）長時間卡死。"""
+        if error:
+            failed_song = self.get_current_song(guild_id)
+            title = failed_song.get('title', '未知歌曲') if failed_song else '未知歌曲'
+            await interaction.channel.send(f"播放 **{title}** 時中斷: {error}")
+            await self._retry_after_failure(interaction, guild_id)
+        else:
+            self.consecutive_play_failures[guild_id] = 0
+            await self.play_next(interaction)
+
+    async def _retry_after_failure(self, interaction: discord.Interaction, guild_id: int):
+        """播放/串流失敗後的節流重試：達到連續失敗上限就停止自動播放，
+        否則延遲一段時間後才重試下一首，避免對來源連續轟炸。"""
+        failures = self.consecutive_play_failures.get(guild_id, 0) + 1
+        self.consecutive_play_failures[guild_id] = failures
+        if failures >= MAX_CONSECUTIVE_PLAY_FAILURES:
+            self.consecutive_play_failures[guild_id] = 0
+            await interaction.channel.send("⚠️ 連續多首歌曲播放失敗，已停止自動播放，請稍後再用 /play 或按鈕重新開始。")
+            self.set_current_song(guild_id, None)
+            return
+        await asyncio.sleep(PLAY_FAILURE_RETRY_DELAY)
+        asyncio.create_task(self.play_next(interaction))
 
     # --- 推薦功能 ---
     async def get_recommendation(self, song_info: dict, requester: discord.User):

@@ -42,6 +42,7 @@ A feature-rich Discord music bot built with discord.py, supporting playback from
 
 - Python 3.8 or higher
 - FFmpeg installed on your system
+- Node.js 20+ installed and on PATH (optional, but recommended — see note below)
 - Discord Bot Token
 - YouTube Data API v3 Key (optional, for recommendation features)
 
@@ -63,7 +64,16 @@ pip install -r requirements.txt
    - **macOS**: `brew install ffmpeg`
    - **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
 
-4. **Set up environment variables**
+4. **Install Node.js (recommended)**
+
+   yt-dlp uses Node.js as a JavaScript runtime to decrypt YouTube's signature and unlock the stronger `web`/`web safari` clients. Without it, yt-dlp silently falls back to the JS-less `android_vr` client, which is much more prone to 403 errors on stream URLs.
+   - **Windows**: `winget install --id OpenJS.NodeJS.LTS -e` (open a **new** terminal afterward so the updated PATH takes effect)
+   - **Ubuntu/Debian**: `sudo apt-get install nodejs` or install via [nvm](https://github.com/nvm-sh/nvm)
+   - **macOS**: `brew install node`
+
+   Verify with `node --version` (needs to be v20+). If the bot prints `警告：找不到 node 執行檔` (or the English equivalent) on startup, Node isn't on the PATH of the process running the bot.
+
+5. **Set up environment variables**
 
 Create a `.env` file in the project root:
 ```env
@@ -71,10 +81,91 @@ DISCORD_TOKEN=your_discord_bot_token_here
 YOUTUBE_API_KEY=your_youtube_api_key_here
 ```
 
-5. **Run the bot**
+6. **Run the bot**
 ```bash
 python bot.py
 ```
+
+## 🖥️ Auto-start on Boot with systemd (Linux)
+
+For a Linux server, you can have the bot start automatically on boot, run inside a dedicated conda environment (e.g. `DC_bot`), restart itself instantly if it crashes, and get checked every 10 minutes by a watchdog in case it ever stops running. This uses two systemd units plus a timer — no cron, no long-lived passwordless sudo required.
+
+**1. Main service** — `/etc/systemd/system/dc-bot-mujica.service`
+```ini
+[Unit]
+Description=DC_bot Mujica Discord Music Bot
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=<your-linux-username>
+Group=<your-linux-username>
+WorkingDirectory=/path/to/BillCipherrr-DC_bot_mujica
+Environment="PATH=/path/to/conda/envs/DC_bot/bin:/path/to/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/path/to/conda/envs/DC_bot/bin/python bot.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+`ExecStart` points directly at the `DC_bot` conda environment's `python` binary, so the bot always runs with that environment's dependencies regardless of whether the shell that triggers it has `conda activate`d anything. `Restart=always` restarts the process within 10 seconds of a crash.
+
+**2. Watchdog service** — `/etc/systemd/system/dc-bot-mujica-watchdog.service`
+```ini
+[Unit]
+Description=Ensure dc-bot-mujica.service is running (watchdog)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'systemctl is-active --quiet dc-bot-mujica.service || (systemctl reset-failed dc-bot-mujica.service; systemctl start dc-bot-mujica.service)'
+```
+
+**3. Watchdog timer** — `/etc/systemd/system/dc-bot-mujica-watchdog.timer`
+```ini
+[Unit]
+Description=Run dc-bot-mujica watchdog every 10 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+Unit=dc-bot-mujica-watchdog.service
+
+[Install]
+WantedBy=timers.target
+```
+Every 10 minutes this checks whether the main service is active and, if not, resets any failure state and starts it again — a backstop for cases `Restart=always` doesn't cover (e.g. the service was manually stopped, or hit its crash-loop start limit).
+
+**Install (requires sudo, one-time):**
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now dc-bot-mujica.service
+sudo systemctl enable --now dc-bot-mujica-watchdog.timer
+```
+
+**Check status / logs:**
+```bash
+systemctl status dc-bot-mujica.service
+journalctl -u dc-bot-mujica.service -f
+systemctl list-timers dc-bot-mujica-watchdog.timer
+```
+
+**Undo / uninstall:**
+```bash
+sudo systemctl disable --now dc-bot-mujica.service
+sudo systemctl disable --now dc-bot-mujica-watchdog.timer
+sudo rm /etc/systemd/system/dc-bot-mujica.service
+sudo rm /etc/systemd/system/dc-bot-mujica-watchdog.service
+sudo rm /etc/systemd/system/dc-bot-mujica-watchdog.timer
+sudo systemctl daemon-reload
+sudo systemctl reset-failed
+```
+This stops both units, removes autostart-on-boot, deletes the unit files, and clears them from systemd's state — the bot goes back to needing to be started manually with `python bot.py`.
 
 ## 🎯 Commands
 
@@ -172,6 +263,10 @@ The bot uses YouTube API to find related videos based on:
 **Bot doesn't join voice channel:**
 - Ensure FFmpeg is properly installed
 - Check that Opus library is loaded (console output)
+
+**Streams frequently fail with 403 errors / console shows "找不到 node 執行檔":**
+- Install Node.js 20+ (see Installation step 4) and make sure `node --version` works in the same terminal/session that runs `python bot.py`
+- On Windows, PATH changes from a fresh install only apply to newly opened terminals — restart your terminal and reactivate your virtualenv/conda env after installing Node
 
 **Recommendations not working:**
 - Verify YouTube API key is set in `.env`

@@ -42,6 +42,7 @@
 
 - Python 3.8 或更高版本
 - 系統需安裝 FFmpeg
+- 系統需安裝 Node.js 20+ 並加入 PATH（選用，但建議安裝，詳見下方說明）
 - Discord Bot Token
 - YouTube Data API v3 金鑰（選用，用於推薦功能）
 
@@ -63,7 +64,16 @@ pip install -r requirements.txt
    - **macOS**：`brew install ffmpeg`
    - **Windows**：從 [ffmpeg.org](https://ffmpeg.org/download.html) 下載
 
-4. **設定環境變數**
+4. **安裝 Node.js（建議安裝）**
+
+   yt-dlp 會用 Node.js 作為 JavaScript runtime 來解密 YouTube 的簽章，才能使用較不容易被擋的 `web`/`web safari` client。沒有 Node.js 的話，yt-dlp 會靜默退回 JS-less 的 `android_vr` client，串流網址較容易遇到 403 錯誤。
+   - **Windows**：`winget install --id OpenJS.NodeJS.LTS -e`（安裝後請**開一個新的終端機視窗**，PATH 更新才會生效）
+   - **Ubuntu/Debian**：`sudo apt-get install nodejs`，或透過 [nvm](https://github.com/nvm-sh/nvm) 安裝
+   - **macOS**：`brew install node`
+
+   安裝後用 `node --version` 確認版本 >= 20。如果 bot 啟動時印出「警告：找不到 node 執行檔」，代表執行 bot 的那個終端機/程序的 PATH 裡沒有 node。
+
+5. **設定環境變數**
 
 在專案根目錄建立 `.env` 檔案：
 ```env
@@ -71,10 +81,91 @@ DISCORD_TOKEN=你的Discord機器人Token
 YOUTUBE_API_KEY=你的YouTube_API金鑰
 ```
 
-5. **啟動機器人**
+6. **啟動機器人**
 ```bash
 python bot.py
 ```
+
+## 🖥️ 使用 systemd 設定開機自動啟動（Linux）
+
+在 Linux 伺服器上，可以讓機器人開機時自動啟動、在指定的 conda 環境（例如 `DC_bot`）中執行、程式當掉時立刻自動重啟，並且每 10 分鐘由一個 watchdog 檢查一次，若發現沒在執行就自動啟動。這裡使用兩個 systemd service 加一個 timer 來達成，不需要 cron，也不需要長期開放 passwordless sudo。
+
+**1. 主服務** — `/etc/systemd/system/dc-bot-mujica.service`
+```ini
+[Unit]
+Description=DC_bot Mujica Discord Music Bot
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=<你的Linux使用者名稱>
+Group=<你的Linux使用者名稱>
+WorkingDirectory=/path/to/BillCipherrr-DC_bot_mujica
+Environment="PATH=/path/to/conda/envs/DC_bot/bin:/path/to/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/path/to/conda/envs/DC_bot/bin/python bot.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+`ExecStart` 直接指向 `DC_bot` conda 環境裡的 `python` 執行檔，所以機器人一定會在該環境底下執行，不需要依賴啟動它的 shell 是否有先 `conda activate`。`Restart=always` 讓程式當掉後大約 10 秒內就會自動重啟。
+
+**2. Watchdog 服務** — `/etc/systemd/system/dc-bot-mujica-watchdog.service`
+```ini
+[Unit]
+Description=Ensure dc-bot-mujica.service is running (watchdog)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'systemctl is-active --quiet dc-bot-mujica.service || (systemctl reset-failed dc-bot-mujica.service; systemctl start dc-bot-mujica.service)'
+```
+
+**3. Watchdog timer** — `/etc/systemd/system/dc-bot-mujica-watchdog.timer`
+```ini
+[Unit]
+Description=Run dc-bot-mujica watchdog every 10 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+Unit=dc-bot-mujica-watchdog.service
+
+[Install]
+WantedBy=timers.target
+```
+每 10 分鐘檢查一次主服務是否在執行，若沒有就重設失敗狀態並重新啟動——這是 `Restart=always` 之外的保險機制（例如服務被手動停掉，或觸發了 crash-loop 的啟動次數限制時）。
+
+**安裝（需要 sudo，只需執行一次）：**
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now dc-bot-mujica.service
+sudo systemctl enable --now dc-bot-mujica-watchdog.timer
+```
+
+**檢查狀態／查看日誌：**
+```bash
+systemctl status dc-bot-mujica.service
+journalctl -u dc-bot-mujica.service -f
+systemctl list-timers dc-bot-mujica-watchdog.timer
+```
+
+**復原／解除安裝：**
+```bash
+sudo systemctl disable --now dc-bot-mujica.service
+sudo systemctl disable --now dc-bot-mujica-watchdog.timer
+sudo rm /etc/systemd/system/dc-bot-mujica.service
+sudo rm /etc/systemd/system/dc-bot-mujica-watchdog.service
+sudo rm /etc/systemd/system/dc-bot-mujica-watchdog.timer
+sudo systemctl daemon-reload
+sudo systemctl reset-failed
+```
+這會停止兩個服務、取消開機自動啟動、刪除 unit 檔案，並清除 systemd 中殘留的狀態——之後機器人就會回到需要手動執行 `python bot.py` 才能啟動的狀態。
 
 ## 🎯 指令說明
 
@@ -172,6 +263,10 @@ BillCipherrr-DC_bot_mujica/
 **機器人無法加入語音頻道：**
 - 確認 FFmpeg 已正確安裝
 - 檢查 Opus 函式庫是否已載入（查看控制台輸出）
+
+**串流經常出現 403 錯誤／控制台印出「找不到 node 執行檔」：**
+- 安裝 Node.js 20+（見安裝步驟 4），並確認在執行 `python bot.py` 的同一個終端機/環境中 `node --version` 有效
+- Windows 上，新安裝的 PATH 只對之後新開啟的終端機生效——裝完 Node 後請重開終端機並重新啟用虛擬環境/conda 環境
 
 **推薦功能無法使用：**
 - 驗證 YouTube API 金鑰是否已設定在 `.env`

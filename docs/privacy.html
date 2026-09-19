@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mujica 隱私權政策</title>
+<style>
+  :root{
+    --bg:#faf8f5;
+    --surface:#ffffff;
+    --ink:#1c1a22;
+    --ink-soft:#5a5566;
+    --ink-faint:#8b8596;
+    --accent:#6952c9;
+    --accent-soft:#efe9fc;
+    --border:#e6e1ec;
+    --note-bg:#f4effa;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#131019;
+      --surface:#1a1623;
+      --ink:#f1eef7;
+      --ink-soft:#b6afc7;
+      --ink-faint:#847d97;
+      --accent:#a892f0;
+      --accent-soft:#241f36;
+      --border:#2c2739;
+      --note-bg:#211c30;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#131019;
+    --surface:#1a1623;
+    --ink:#f1eef7;
+    --ink-soft:#b6afc7;
+    --ink-faint:#847d97;
+    --accent:#a892f0;
+    --accent-soft:#241f36;
+    --border:#2c2739;
+    --note-bg:#211c30;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body{
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Source Sans 3", "Noto Sans TC", -apple-system, BlinkMacSystemFont, sans-serif;
+    line-height: 1.75;
+    padding: 0 16px;
+  }
+  .page{ max-width: 760px; margin: 0 auto; padding-block: 56px 96px; }
+
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:8px;
+    font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600; margin-bottom: 18px;
+  }
+  .eyebrow svg{ width:16px; height:16px; flex-shrink:0; }
+
+  h1{
+    font-family: "Literata", "Noto Serif TC", Georgia, serif;
+    font-weight: 600;
+    font-size: clamp(1.9rem, 5vw, 2.6rem);
+    line-height: 1.25; text-wrap: balance; margin: 0 0 14px;
+  }
+  .subtitle{ color: var(--ink-soft); font-size: 1.02rem; max-width: 56ch; margin: 0 0 28px; }
+
+  .meta-row{
+    display:flex; flex-wrap:wrap; gap: 10px 28px;
+    padding: 16px 20px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 12px;
+    margin-bottom: 40px; font-size: 0.88rem; color: var(--ink-soft);
+  }
+  .meta-row div{ display:flex; flex-direction:column; gap:2px; }
+  .meta-row strong{ color: var(--ink); font-weight: 600; font-size: 0.92rem; }
+
+  nav.toc{
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px 22px; margin-bottom: 48px;
+  }
+  nav.toc h2{
+    font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--ink-faint); margin: 0 0 12px; font-weight: 700;
+  }
+  nav.toc ol{ margin:0; padding: 0 0 0 1.1em; columns: 2; column-gap: 28px; font-size: 0.92rem; }
+  nav.toc li{ break-inside: avoid; margin-bottom: 7px; }
+  nav.toc a{ color: var(--ink-soft); text-decoration:none; }
+  nav.toc a:hover{ color: var(--accent); text-decoration:underline; }
+
+  section{ margin-bottom: 40px; scroll-margin-top: 20px; }
+  section h2{
+    font-family: "Literata", "Noto Serif TC", Georgia, serif;
+    font-size: 1.28rem; font-weight: 600;
+    display:flex; align-items:baseline; gap: 12px;
+    margin: 0 0 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border);
+  }
+  section h2 .num{
+    font-variant-numeric: tabular-nums; color: var(--accent);
+    font-family: "Source Sans 3", sans-serif; font-weight: 700; font-size: 0.9rem;
+    background: var(--accent-soft); border-radius: 999px;
+    width: 26px; height: 26px;
+    display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  section p{ margin: 0 0 12px; }
+  section p.soft{ color: var(--ink-soft); }
+  section ul{ margin: 0 0 12px; padding-left: 1.3em; }
+  section li{ margin-bottom: 8px; }
+
+  .table-wrap{ overflow-x: auto; margin: 0 0 14px; }
+  table{
+    width: 100%; border-collapse: collapse; font-size: 0.92rem;
+    background: var(--surface); border: 1px solid var(--border);
+  }
+  th, td{ text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th{ font-size: 0.8rem; letter-spacing: 0.05em; color: var(--ink-faint); font-weight: 700; white-space: nowrap; }
+  tr:last-child td{ border-bottom: 0; }
+
+  .note{
+    background: var(--note-bg); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent); border-radius: 0 10px 10px 0;
+    padding: 14px 18px; font-size: 0.92rem; color: var(--ink-soft); margin: 14px 0;
+  }
+  .note strong{ color: var(--ink); }
+
+  code{
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--accent-soft); color: var(--accent);
+    padding: 1px 6px; border-radius: 5px; font-size: 0.85em;
+  }
+
+  a.contact{ color: var(--accent); font-weight: 600; text-decoration: none; border-bottom: 1px solid currentColor; }
+
+  footer{
+    margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--border);
+    color: var(--ink-faint); font-size: 0.85rem;
+  }
+
+  @media (max-width: 480px){
+    nav.toc ol{ columns: 1; }
+    .meta-row{ flex-direction: column; gap: 12px; }
+  }
+</style>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Literata:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="page">
+  <div class="eyebrow">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+    Mujica · Discord 音樂機器人
+  </div>
+  <h1>隱私權政策</h1>
+  <p class="subtitle">本政策說明 Mujica Discord 機器人（「本服務」）會蒐集哪些資料、如何使用，以及您可以如何行使自己的權利。</p>
+
+  <div class="meta-row">
+    <div><strong>生效日期</strong><span>2026 年 9 月 18 日</span></div>
+    <div><strong>資料控制者</strong><span>本服務之個人開發者</span></div>
+    <div><strong>聯絡方式</strong><span><a class="contact" href="mailto:wasd361571@gmail.com">wasd361571@gmail.com</a></span></div>
+  </div>
+
+  <nav class="toc" aria-label="政策目錄">
+    <h2>目錄</h2>
+    <ol>
+      <li><a href="#s1">我們蒐集的資料</a></li>
+      <li><a href="#s2">資料使用目的</a></li>
+      <li><a href="#s3">我們不蒐集的資料</a></li>
+      <li><a href="#s4">第三方服務與資料傳輸</a></li>
+      <li><a href="#s5">資料保存與安全</a></li>
+      <li><a href="#s6">資料分享</a></li>
+      <li><a href="#s7">您的權利與刪除請求</a></li>
+      <li><a href="#s8">兒少隱私</a></li>
+      <li><a href="#s9">政策變更</a></li>
+      <li><a href="#s10">聯絡我們</a></li>
+    </ol>
+  </nav>
+
+  <section id="s1">
+    <h2><span class="num">1</span>我們蒐集的資料</h2>
+    <p>為提供播放紀錄與推薦功能，本服務會在開發者自行管理的 SQLite 資料庫中，永久保存下列資料：</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>資料</th><th>內容</th><th>來源</th></tr></thead>
+        <tbody>
+          <tr><td>歌曲資訊</td><td>歌曲標題、來源網址、長度</td><td>使用者點播的內容</td></tr>
+          <tr><td>播放紀錄</td><td>Discord 使用者 ID、伺服器 ID、播放時間</td><td>使用者使用播放指令時</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>另外，本服務會在<strong>記憶體中</strong>暫存各伺服器的播放佇列、音量、循環模式與設定，這些資料只在程式運作期間存在，機器人重新啟動後即消失。</p>
+  </section>
+
+  <section id="s2">
+    <h2><span class="num">2</span>資料使用目的</h2>
+    <ul>
+      <li>顯示您個人或伺服器的播放歷史與熱門歌曲統計。</li>
+      <li>依您或伺服器的播放紀錄，產生歌曲推薦。</li>
+      <li>維持機器人的基本運作與除錯。</li>
+    </ul>
+    <div class="note"><strong>資料依伺服器隔離</strong>：所有查詢皆以伺服器 ID 限定範圍，不會在不同伺服器之間交叉使用或顯示。</div>
+  </section>
+
+  <section id="s3">
+    <h2><span class="num">3</span>我們不蒐集的資料</h2>
+    <ul>
+      <li>不記錄或保存您在頻道中的一般訊息內容。</li>
+      <li>不錄製、不保存語音頻道中的任何語音。</li>
+      <li>不蒐集您的真實姓名、電子郵件、電話、位置或付款資訊。</li>
+    </ul>
+    <p class="soft">機器人僅會處理您明確使用的斜線指令與播放器按鈕所帶來的資訊。</p>
+  </section>
+
+  <section id="s4">
+    <h2><span class="num">4</span>第三方服務與資料傳輸</h2>
+    <p>為提供功能，下列情況會將資料傳送給第三方，該等服務各自受其隱私權政策規範：</p>
+    <ul>
+      <li><strong>Discord</strong>：機器人透過 Discord 平台運作，使用者 ID 與伺服器 ID 由 Discord 提供。</li>
+      <li><strong>YouTube 及其他串流網站（透過 yt-dlp）</strong>：為解析並播放音訊，機器人會向這些網站發出請求，請求內容為您提供的連結或搜尋關鍵字。</li>
+      <li><strong>YouTube Data API</strong>：推薦功能在歷史紀錄不足時，會以歌曲標題作為關鍵字向該 API 查詢。</li>
+      <li><strong>MiniMax 語音合成 API</strong>：使用 <code>/tts</code> 指令時，您輸入的文字會傳送給 MiniMax 以產生語音。生成的音檔僅以暫存檔形式用於播放，播放後即刪除。請勿輸入敏感個人資訊。</li>
+    </ul>
+  </section>
+
+  <section id="s5">
+    <h2><span class="num">5</span>資料保存與安全</h2>
+    <p>播放紀錄儲存於開發者管理的伺服器上，除非您提出刪除請求，否則會持續保存以維持歷史與推薦功能。開發者採取合理措施保護資料，但網路傳輸與儲存無法保證絕對安全。</p>
+  </section>
+
+  <section id="s6">
+    <h2><span class="num">6</span>資料分享</h2>
+    <p>我們不會出售、出租或交易您的資料，也不會將其用於廣告。除第 4 節所述功能所需的第三方傳輸，以及法律要求依法揭露的情況外，不會與他人分享。</p>
+    <p class="soft">另外請注意，「播放歷史」等指令的結果可能顯示在頻道中，同一伺服器的其他成員可能因此看到您點播過的歌曲。</p>
+  </section>
+
+  <section id="s7">
+    <h2><span class="num">7</span>您的權利與刪除請求</h2>
+    <p>您可以隨時透過下方聯絡方式，請求：</p>
+    <ul>
+      <li>查詢與您 Discord 使用者 ID 相關的資料。</li>
+      <li>刪除與您相關的播放紀錄。</li>
+    </ul>
+    <p>請於信件中提供您的 Discord 使用者 ID（於 Discord 開啟開發者模式後，可對自己的頭像按右鍵複製），開發者會盡速處理。您也可以隨時把機器人踢出伺服器並停止使用本服務。</p>
+  </section>
+
+  <section id="s8">
+    <h2><span class="num">8</span>兒少隱私</h2>
+    <p>本服務依附於 Discord 平台，使用者須符合 Discord 規定的最低年齡。我們不會刻意蒐集未達該年齡者的資料；若發現此類情況，將依請求刪除相關資料。</p>
+  </section>
+
+  <section id="s9">
+    <h2><span class="num">9</span>政策變更</h2>
+    <p>本政策可能不定期修訂，更新後將於本頁面公布並立即生效。您於更新後繼續使用本服務，即視為同意修訂內容。</p>
+  </section>
+
+  <section id="s10">
+    <h2><span class="num">10</span>聯絡我們</h2>
+    <p>若您對本政策有任何疑問，或想行使第 7 節所述權利，請聯繫：</p>
+    <p><a class="contact" href="mailto:wasd361571@gmail.com">wasd361571@gmail.com</a></p>
+  </section>
+
+  <footer>
+    Mujica 為個人開發之 Discord 音樂機器人專案，非 Discord Inc. 官方產品。
+  </footer>
+</div>
+</body>
+</html>
