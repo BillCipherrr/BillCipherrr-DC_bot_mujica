@@ -5,6 +5,7 @@ import pytest
 from conftest import FakeGuild, FakeVoiceChannel
 
 import cogs.music as music_module
+from mujica.context import PlayContext
 from mujica.song import Song
 
 
@@ -12,6 +13,7 @@ async def test_concurrent_play_next_and_after_playing_dont_double_play(
     music_cog, make_interaction, patch_ytdlp, temp_db, monkeypatch
 ):
     interaction = make_interaction()
+    ctx = PlayContext.from_interaction(interaction)
     guild_id = interaction.guild.id
     queue = music_cog.get_queue(guild_id)
     queue.append(Song(url="https://www.youtube.com/watch?v=aaa", title="Song A", requester=interaction.user))
@@ -33,20 +35,20 @@ async def test_concurrent_play_next_and_after_playing_dont_double_play(
     max_concurrent = 0
     original_play_next_locked = music_cog._play_next_locked
 
-    async def instrumented_play_next_locked(interaction_arg):
+    async def instrumented_play_next_locked(ctx_arg):
         nonlocal concurrent_count, max_concurrent
         concurrent_count += 1
         max_concurrent = max(max_concurrent, concurrent_count)
         try:
-            await original_play_next_locked(interaction_arg)
+            await original_play_next_locked(ctx_arg)
         finally:
             concurrent_count -= 1
 
     monkeypatch.setattr(music_cog, "_play_next_locked", instrumented_play_next_locked)
 
     await asyncio.gather(
-        music_cog.play_next(interaction),
-        music_cog._handle_after_playing(interaction, guild_id, None),
+        music_cog.play_next(ctx),
+        music_cog._handle_after_playing(ctx, None),
     )
 
     # 這才是鎖真正保證的事：_play_next_locked 的執行區間永遠不會重疊。
@@ -75,11 +77,12 @@ async def test_retry_after_failure_stops_at_max_consecutive_failures(
     monkeypatch.setattr(music_module, "MAX_CONSECUTIVE_PLAY_FAILURES", 3)
 
     interaction = make_interaction()
+    ctx = PlayContext.from_interaction(interaction)
     guild_id = interaction.guild.id
     music_cog.set_current_song(guild_id, Song(url="https://x", title="Doomed Song", requester=interaction.user))
     music_cog.get_state(guild_id).consecutive_play_failures = 2  # 再一次就達到上限
 
-    await music_cog._retry_after_failure(interaction, guild_id)  # 這次會把失敗次數推到 3 == 上限
+    await music_cog._retry_after_failure(ctx)  # 這次會把失敗次數推到 3 == 上限
 
     assert music_cog.get_state(guild_id).consecutive_play_failures == 0
     assert music_cog.get_current_song(guild_id) is None
@@ -91,6 +94,7 @@ async def test_retry_after_failure_reschedules_below_cap(music_cog, make_interac
     monkeypatch.setattr(music_module, "MAX_CONSECUTIVE_PLAY_FAILURES", 3)
 
     interaction = make_interaction()
+    ctx = PlayContext.from_interaction(interaction)
     guild_id = interaction.guild.id
 
     scheduled = []
@@ -105,7 +109,7 @@ async def test_retry_after_failure_reschedules_below_cap(music_cog, make_interac
     # `await asyncio.sleep(0)` 期間，這個單執行緒的 loop 上不會有其他東西在跑。
     monkeypatch.setattr(music_module.asyncio, "create_task", fake_create_task)
 
-    await music_cog._retry_after_failure(interaction, guild_id)
+    await music_cog._retry_after_failure(ctx)
 
     assert music_cog.get_state(guild_id).consecutive_play_failures == 1
     assert len(scheduled) == 1

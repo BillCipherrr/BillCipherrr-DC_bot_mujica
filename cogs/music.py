@@ -14,6 +14,7 @@ from discord.ext import commands, tasks
 from googleapiclient.discovery import build
 
 import database
+from mujica.context import PlayContext
 from mujica.song import Song
 from mujica.state import GuildState
 from mujica.urls import (
@@ -182,15 +183,15 @@ class MusicCog(commands.Cog):
             state.disconnect_timer.cancel()
             state.disconnect_timer = None
 
-    async def start_disconnect_timer(self, interaction: discord.Interaction):
-        guild_id = interaction.guild.id
+    async def start_disconnect_timer(self, ctx: PlayContext):
+        guild_id = ctx.guild.id
         self.cancel_disconnect_timer(guild_id)
         async def disconnect_after_delay():
             await asyncio.sleep(300)
             voice_client = self.bot.get_guild(guild_id).voice_client
             if voice_client and not (voice_client.is_playing() or voice_client.is_paused()):
-                await interaction.channel.send("閒置超過 5 分鐘，自動離開頻道。")
-                await self.stop_and_leave(interaction)
+                await ctx.channel.send("閒置超過 5 分鐘，自動離開頻道。")
+                await self.stop_and_leave(ctx)
         self.get_state(guild_id).disconnect_timer = asyncio.create_task(disconnect_after_delay())
 
     def toggle_loop_mode(self, guild_id: int, mode: LoopMode):
@@ -248,18 +249,18 @@ class MusicCog(commands.Cog):
                 self.logger.debug("Ignoring cleanup error: %s", followup_error, exc_info=followup_error)
 
     # --- 核心播放邏輯 (已修正) ---
-    async def play_next(self, interaction: discord.Interaction):
-        guild_id = interaction.guild.id
+    async def play_next(self, ctx: PlayContext):
+        guild_id = ctx.guild.id
         # 加鎖：確保同一 guild 同時只有一個 play_next 在執行，避免 after_playing
         # 回呼與例外重試（或其他觸發來源）互相搶跑，同時呼叫 voice_client.play()
         # 而炸出 discord.errors.ClientException: Already playing audio。
         async with self._get_play_lock(guild_id):
-            await self._play_next_locked(interaction)
+            await self._play_next_locked(ctx)
 
-    async def _play_next_locked(self, interaction: discord.Interaction):
-        guild_id = interaction.guild.id
+    async def _play_next_locked(self, ctx: PlayContext):
+        guild_id = ctx.guild.id
         self.stop_progress_task(guild_id)
-        voice_client = interaction.guild.voice_client
+        voice_client = ctx.guild.voice_client
         self.debug_log(guild_id, "play_next called: queue=%d loop_mode=%s has_current=%s", len(self.get_queue(guild_id)), self.get_loop_mode(guild_id).name, bool(self.get_current_song(guild_id)))
 
         # 防護：voice_client 已斷開或不存在
@@ -267,17 +268,17 @@ class MusicCog(commands.Cog):
             self.logger.warning("play_next: voice_client 不存在或已斷開 (guild %s)，嘗試重新連線", guild_id)
             # 嘗試重新連線到使用者所在的頻道
             try:
-                # 從 interaction 嘗試取得頻道資訊
-                member = interaction.guild.get_member(interaction.user.id) if interaction.user else None
+                # 找出觸發者目前所在的語音頻道
+                member = ctx.guild.get_member(ctx.user.id) if ctx.user else None
                 channel = member.voice.channel if member and member.voice else None
                 if channel:
                     voice_client = await self.ensure_voice_connection(channel)
                 else:
-                    await interaction.channel.send("⚠️ 語音連線已中斷，且找不到可重新連線的頻道。")
+                    await ctx.channel.send("⚠️ 語音連線已中斷，且找不到可重新連線的頻道。")
                     self.set_current_song(guild_id, None)
                     return
             except RuntimeError as e:
-                await interaction.channel.send(str(e))
+                await ctx.channel.send(str(e))
                 self.set_current_song(guild_id, None)
                 return
 
@@ -291,23 +292,23 @@ class MusicCog(commands.Cog):
 
         if not queue:
             if loop_mode == LoopMode.RECOMMEND and current_song:
-                await interaction.channel.send("🎶 佇列已空，正在為您推薦下一首歌...")
+                await ctx.channel.send("🎶 佇列已空，正在為您推薦下一首歌...")
                 try:
-                    recommended_song_info = await self.get_recommendation(current_song, interaction.user)
+                    recommended_song_info = await self.get_recommendation(current_song, ctx.user)
                     queue.append(recommended_song_info)
-                    asyncio.create_task(self.play_next(interaction))
+                    asyncio.create_task(self.play_next(ctx))
                 except Exception as e:
                     self.logger.warning("play_next recommendation fallback failed", exc_info=e)
-                    await interaction.channel.send(f"推薦歌曲時發生錯誤: {e}")
+                    await ctx.channel.send(f"推薦歌曲時發生錯誤: {e}")
                 return
             self.set_current_song(guild_id, None)
             player_message = self.get_player_message(guild_id)
             if player_message: await player_message.edit(content="播放佇列已結束。", embed=None, view=None)
             self.set_player_message(guild_id, None)
             self.debug_log(guild_id, "queue ended naturally; sending session summary")
-            if interaction.channel:
-                await self._send_session_summary(interaction.channel, guild_id)
-            await self.start_disconnect_timer(interaction)
+            if ctx.channel:
+                await self._send_session_summary(ctx.channel, guild_id)
+            await self.start_disconnect_timer(ctx)
             return
 
         next_song = queue.popleft()
@@ -336,7 +337,7 @@ class MusicCog(commands.Cog):
                 else:
                     self.debug_log(guild_id, "after callback fired without error")
                 asyncio.run_coroutine_threadsafe(
-                    self._handle_after_playing(interaction, guild_id, error), self.bot.loop
+                    self._handle_after_playing(ctx, error), self.bot.loop
                 )
 
             voice_client.play(volume_source, after=after_playing)
@@ -348,7 +349,7 @@ class MusicCog(commands.Cog):
             )
             self.get_state(guild_id).session_songs.append(next_song)
 
-            view = PlayerView(self, interaction)
+            view = PlayerView(self, ctx)
             self.set_player_view(guild_id, view)
             embed = view.create_embed(next_song)
             # 刪掉舊訊息並重新發送，確保 player embed 永遠在最底部
@@ -358,7 +359,7 @@ class MusicCog(commands.Cog):
                     await old_message.delete()
                 except (discord.NotFound, discord.HTTPException):
                     pass
-            player_message = await interaction.channel.send(embed=embed, view=view)
+            player_message = await ctx.channel.send(embed=embed, view=view)
             self.set_player_message(guild_id, player_message)
             self.start_progress_task(guild_id)
 
@@ -378,35 +379,37 @@ class MusicCog(commands.Cog):
                     "\n可能原因：來源要求登入憑證或特定請求標頭。"
                     "\n可嘗試設定環境變數 YTDLP_COOKIEFILE 指向瀏覽器匯出的 cookies.txt。"
                 )
-            await interaction.channel.send(f"播放 **{next_song.title}** 時發生錯誤: {err_msg}")
-            await self._retry_after_failure(interaction, guild_id)
+            await ctx.channel.send(f"播放 **{next_song.title}** 時發生錯誤: {err_msg}")
+            await self._retry_after_failure(ctx)
 
-    async def _handle_after_playing(self, interaction: discord.Interaction, guild_id: int, error: Exception | None):
+    async def _handle_after_playing(self, ctx: PlayContext, error: Exception | None):
         """voice_client.play() 的 after 回呼實際處理邏輯（已跳到 event loop 執行）。
         與 _play_next_locked 的 except 區塊共用同一套節流重試機制
         (_retry_after_failure)，避免 403 等中途串流失敗繞過重試上限/延遲，
         無節制地立即再呼叫 play_next 造成風暴或（在來源被節流卡住時）長時間卡死。"""
+        guild_id = ctx.guild.id
         if error:
             failed_song = self.get_current_song(guild_id)
             title = failed_song.title if failed_song else '未知歌曲'
-            await interaction.channel.send(f"播放 **{title}** 時中斷: {error}")
-            await self._retry_after_failure(interaction, guild_id)
+            await ctx.channel.send(f"播放 **{title}** 時中斷: {error}")
+            await self._retry_after_failure(ctx)
         else:
             self.get_state(guild_id).consecutive_play_failures = 0
-            await self.play_next(interaction)
+            await self.play_next(ctx)
 
-    async def _retry_after_failure(self, interaction: discord.Interaction, guild_id: int):
+    async def _retry_after_failure(self, ctx: PlayContext):
         """播放/串流失敗後的節流重試：達到連續失敗上限就停止自動播放，
         否則延遲一段時間後才重試下一首，避免對來源連續轟炸。"""
+        guild_id = ctx.guild.id
         state = self.get_state(guild_id)
         state.consecutive_play_failures += 1
         if state.consecutive_play_failures >= MAX_CONSECUTIVE_PLAY_FAILURES:
             state.consecutive_play_failures = 0
-            await interaction.channel.send("⚠️ 連續多首歌曲播放失敗，已停止自動播放，請稍後再用 /play 或按鈕重新開始。")
+            await ctx.channel.send("⚠️ 連續多首歌曲播放失敗，已停止自動播放，請稍後再用 /play 或按鈕重新開始。")
             self.set_current_song(guild_id, None)
             return
         await asyncio.sleep(PLAY_FAILURE_RETRY_DELAY)
-        asyncio.create_task(self.play_next(interaction))
+        asyncio.create_task(self.play_next(ctx))
 
     # --- 推薦功能 ---
     async def get_recommendation(self, song_info: Song, requester: discord.User) -> Song:
@@ -560,7 +563,7 @@ class MusicCog(commands.Cog):
             
             if not is_playing:
                 self.cancel_disconnect_timer(interaction.guild.id)
-                await self.play_next(interaction)
+                await self.play_next(PlayContext.from_interaction(interaction))
             else:
                 view = self.get_player_view(interaction.guild.id)
                 if view: await view.update_player(self.get_current_position(interaction.guild.id))
@@ -593,11 +596,11 @@ class MusicCog(commands.Cog):
         await channel.send(embed=embed)
 
     # --- 其他指令 ---
-    async def stop_and_leave(self, interaction: discord.Interaction):
-        guild_id = interaction.guild.id
+    async def stop_and_leave(self, ctx: PlayContext):
+        guild_id = ctx.guild.id
         self.cancel_disconnect_timer(guild_id)
         self.stop_progress_task(guild_id)
-        voice_client = interaction.guild.voice_client
+        voice_client = ctx.guild.voice_client
         self.debug_log(guild_id, "stop_and_leave invoked")
         if voice_client:
             self.get_queue(guild_id).clear()
@@ -613,7 +616,7 @@ class MusicCog(commands.Cog):
                 try: await player_message.delete()
                 except discord.NotFound: pass
             self.set_player_message(guild_id, None)
-            await self._send_session_summary(interaction.channel, guild_id)
+            await self._send_session_summary(ctx.channel, guild_id)
             try:
                 await voice_client.disconnect(force=True)
             except Exception as e:
@@ -637,7 +640,7 @@ class MusicCog(commands.Cog):
 
     @app_commands.command(name="leave", description="讓機器人離開語音頻道並清空佇列")
     async def leave(self, interaction: discord.Interaction):
-        await self.stop_and_leave(interaction)
+        await self.stop_and_leave(PlayContext.from_interaction(interaction))
         await interaction.response.send_message("👋 已離開頻道並清空佇列。", ephemeral=True)
 
     @app_commands.command(name="sites", description="查看本機器人支援的影音平台")

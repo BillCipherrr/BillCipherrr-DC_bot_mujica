@@ -1,16 +1,18 @@
 import asyncio
 
+from mujica.context import PlayContext
 from mujica.song import Song
 from views.player_view import PlayerView
 
 
 async def test_pause_resume_position_tracking(music_cog, make_interaction, patch_ytdlp, temp_db):
     interaction = make_interaction()
+    ctx = PlayContext.from_interaction(interaction)
     guild_id = interaction.guild.id
     queue = music_cog.get_queue(guild_id)
     queue.append(Song(url="https://www.youtube.com/watch?v=aaa", title="Song A", requester=interaction.user))
     patch_ytdlp(result={"url": "https://stream.example/a.m4a", "title": "Song A", "duration": 100})
-    await music_cog.play_next(interaction)
+    await music_cog.play_next(ctx)
 
     view = music_cog.get_player_view(guild_id)
     assert isinstance(view, PlayerView)
@@ -32,11 +34,12 @@ async def test_pause_resume_position_tracking(music_cog, make_interaction, patch
 
 async def test_skip_button_stops_voice_client_when_playing(music_cog, make_interaction, patch_ytdlp, temp_db):
     interaction = make_interaction()
+    ctx = PlayContext.from_interaction(interaction)
     guild_id = interaction.guild.id
     queue = music_cog.get_queue(guild_id)
     queue.append(Song(url="https://www.youtube.com/watch?v=aaa", title="Song A", requester=interaction.user))
     patch_ytdlp(result={"title": "Song A", "url": "https://stream.example/a"})
-    await music_cog.play_next(interaction)
+    await music_cog.play_next(ctx)
 
     vc = interaction.guild.voice_client
     assert vc.is_playing()
@@ -54,7 +57,8 @@ async def test_skip_button_stops_voice_client_when_playing(music_cog, make_inter
 
 async def test_skip_button_noop_when_nothing_playing(music_cog, make_interaction, monkeypatch):
     interaction = make_interaction()
-    view = PlayerView(music_cog, interaction)
+    ctx = PlayContext.from_interaction(interaction)
+    view = PlayerView(music_cog, ctx)
     vc = interaction.guild.voice_client
     assert not vc.is_playing() and not vc.is_paused()
 
@@ -82,12 +86,13 @@ async def test_paused_position_zero_is_honored_not_treated_as_missing(
     music_cog, make_interaction, patch_ytdlp, temp_db
 ):
     interaction = make_interaction()
+    ctx = PlayContext.from_interaction(interaction)
     guild_id = interaction.guild.id
     music_cog.get_queue(guild_id).append(
         Song(url="https://www.youtube.com/watch?v=aaa", title="Song A", requester=interaction.user)
     )
     patch_ytdlp(result={"url": "https://stream.example/a.m4a", "title": "Song A", "duration": 100})
-    await music_cog.play_next(interaction)
+    await music_cog.play_next(ctx)
     interaction.guild.voice_client.pause()
 
     song = music_cog.get_current_song(guild_id)

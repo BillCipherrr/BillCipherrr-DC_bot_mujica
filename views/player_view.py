@@ -3,20 +3,21 @@ import time
 
 import discord
 
+from mujica.context import PlayContext
 from mujica.state import LoopMode  # 其他模組仍從這裡 import LoopMode
 
 
 class PlayerView(discord.ui.View):
-    def __init__(self, music_cog, interaction):
+    def __init__(self, music_cog, ctx: PlayContext):
         super().__init__(timeout=None)
         self.music_cog = music_cog
-        self.interaction = interaction
+        self.ctx = ctx
         self.update_buttons()
 
     def update_buttons(self):
-        guild_id = self.interaction.guild.id
+        guild_id = self.ctx.guild.id
         mode = self.music_cog.get_loop_mode(guild_id)
-        vc = self.interaction.guild.voice_client
+        vc = self.ctx.guild.voice_client
 
         if vc and vc.is_paused():
             self.pause_resume_button.label = "Play"
@@ -61,7 +62,7 @@ class PlayerView(discord.ui.View):
         embed.add_field(name="\n進度", value=f"{bar_str}\n{time_str}", inline=False)
 
         # --- 核心修改：加入待播清單欄位 ---
-        queue = self.music_cog.get_queue(self.interaction.guild.id)
+        queue = self.music_cog.get_queue(self.ctx.guild.id)
         if queue:
             queue_list = ""
             for i, song in enumerate(list(queue)[:5]): # 最多顯示 5 首
@@ -71,12 +72,12 @@ class PlayerView(discord.ui.View):
             embed.add_field(name="🎶 待播清單", value=queue_list, inline=False)
         # ----------------------------------
 
-        mode = self.music_cog.get_loop_mode(self.interaction.guild.id)
+        mode = self.music_cog.get_loop_mode(self.ctx.guild.id)
         embed.set_footer(text=f"播放模式: {mode.name}")
         return embed
 
     async def update_player(self, current_position=0):
-        guild_id = self.interaction.guild.id
+        guild_id = self.ctx.guild.id
         player_message = self.music_cog.get_player_message(guild_id)
         current_song = self.music_cog.get_current_song(guild_id)
         if not player_message or not current_song: return
@@ -101,7 +102,7 @@ class PlayerView(discord.ui.View):
                 current_song.paused_position = self.music_cog.get_current_position(guild_id)
                 self.music_cog.debug_log(guild_id, "pause pressed at position=%.2f", current_song.paused_position)
             vc.pause()
-            await self.music_cog.start_disconnect_timer(interaction)
+            await self.music_cog.start_disconnect_timer(PlayContext.from_interaction(interaction))
         elif vc and vc.is_paused():
             if current_song:
                 paused_position = current_song.paused_position if current_song.paused_position is not None else current_song.resume_offset
@@ -163,5 +164,5 @@ class PlayerView(discord.ui.View):
 
     @discord.ui.button(emoji="⏹️", label="Stop", style=discord.ButtonStyle.danger)
     async def stop_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.music_cog.stop_and_leave(interaction)
+        await self.music_cog.stop_and_leave(PlayContext.from_interaction(interaction))
         await interaction.response.send_message("⏹️ 播放已停止", ephemeral=True)
