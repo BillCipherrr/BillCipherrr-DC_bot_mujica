@@ -43,6 +43,14 @@ Requires FFmpeg installed on the system and an Opus shared library available (bo
 - `VERIFY_GUILD_ID` / `VERIFY_VOICE_CHANNEL_ID` — optional; only needed to run `scripts/verify_playback.py` (the live playback smoke test). Must point at a real Discord test server / voice channel the bot is already a member of.
 - `VERIFY_FIXTURE_URLS` — optional; comma-separated override for `scripts/verify_playback.py`'s built-in fixture YouTube URLs.
 
+## CI/CD and deployment
+
+- `.github/workflows/lint.yml` (`Lint`): `ruff check .` (ruff pinned to 0.16.1) on every push/PR to `main`, on GitHub-hosted `ubuntu-latest`.
+- `.github/workflows/deploy.yml` (`Deploy`): on every push to `main` (or manual dispatch), except pushes that only touch `**.md` / `docs/**` (`paths-ignore`, so doc-only commits don't restart the bot). Job `checks` (`ubuntu-latest`) runs ruff + `pytest tests/`; job `deploy` (`needs: checks`, `runs-on: self-hosted`) runs on the production host: `git fetch` (public HTTPS URL, no SSH key) → `git merge --ff-only $GITHUB_SHA` in `/home/user1/BillCipherrr-DC_bot_mujica` → `pip install -r requirements.txt` with the `DC_bot` conda env → `sudo -n systemctl restart dc-bot-mujica.service` → checks the service is active (dumps `journalctl` and fails otherwise). Failed checks mean nothing is deployed; the old version keeps running.
+- Deploying restarts the bot: it disconnects for a few seconds and the in-memory queues/state are lost (see `MusicCog` state below). The `deploy` job fails, rather than overwriting, if the production checkout has uncommitted changes that block a fast-forward — don't edit files directly on the host.
+- Host setup that lives outside the repo (not in git): the self-hosted runner is installed at `/home/user1/actions-runner` (systemd service `actions.runner.BillCipherrr-BillCipherrr-DC_bot_mujica.*`, runs as `user1`, only default labels `self-hosted, Linux, X64`), and `/etc/sudoers.d/dc-bot-mujica-deploy` lets `user1` run exactly `systemctl restart dc-bot-mujica.service` without a password. The bot itself is the `dc-bot-mujica.service` systemd unit plus a watchdog timer (see README).
+- Security: this repo is public and the runner executes on the production host with access to `.env`. Keep `deploy` triggered only by `push` to `main`/`workflow_dispatch` (never `pull_request`/`pull_request_target`), keep PR checks on GitHub-hosted runners, and keep Settings → Actions → "Require approval for all external contributors" enabled.
+
 ## Architecture
 
 ### Startup flow (`bot.py`)
