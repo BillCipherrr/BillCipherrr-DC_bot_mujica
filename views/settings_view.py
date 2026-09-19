@@ -28,7 +28,7 @@ class SettingsView(discord.ui.View):
 
         # 切換設定
         current_status = self.music_cog.is_playlist_enabled(self.guild_id)
-        self.music_cog.playlist_enabled[self.guild_id] = not current_status
+        self.music_cog.set_playlist_enabled(self.guild_id, not current_status)
 
         # 更新按鈕外觀並重新整理 View
         self.update_buttons()

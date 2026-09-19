@@ -14,6 +14,7 @@ from discord.ext import commands, tasks
 from googleapiclient.discovery import build
 
 import database
+from mujica.state import GuildState
 from mujica.urls import (
     extract_video_id,
     normalize_title_for_dedup,
@@ -55,46 +56,30 @@ class RecommendationError(Exception):
 class MusicCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.queues = {}
-        self.loop_modes = {}
-        self.current_songs = {}
-        self.player_messages = {}
-        self.player_views = {}
-        self.progress_tasks = {}
-        self.volumes = {}
-        self.disconnect_timers = {}
-        self.playlist_enabled = {}
-        self.voice_locks = {}  # per-guild 語音連線鎖，防止競態
-        self.play_locks = {}  # per-guild play_next 鎖，防止 after_playing 回呼與例外重試互相搶跑
-        self.consecutive_play_failures = {}  # per-guild 連續播放失敗次數，避免無限重試風暴
-        self.session_songs = {}  # 記錄本次 session 播放的歌曲
-        self.debug_modes = {}
+        self.states: dict[int, GuildState] = {}  # guild_id -> 該 guild 的所有播放狀態
         self.global_debug_default = os.getenv("MUSIC_DEBUG", "false").lower() in ("1", "true", "yes", "on")
         self.logger = logging.getLogger(__name__)
 
     def is_debug_enabled(self, guild_id: int) -> bool:
-        return self.debug_modes.get(guild_id, self.global_debug_default)
+        mode = self.get_state(guild_id).debug_mode
+        return self.global_debug_default if mode is None else mode
 
     def set_debug_mode(self, guild_id: int, enabled: bool):
-        self.debug_modes[guild_id] = enabled
+        self.get_state(guild_id).debug_mode = enabled
 
     def debug_log(self, guild_id: int, message: str, *args):
         if self.is_debug_enabled(guild_id):
             self.logger.info("[MUSIC_DEBUG][Guild %s] " + message, guild_id, *args)
 
     def _get_voice_lock(self, guild_id: int) -> asyncio.Lock:
-        """取得或建立 per-guild 的語音連線鎖。"""
-        if guild_id not in self.voice_locks:
-            self.voice_locks[guild_id] = asyncio.Lock()
-        return self.voice_locks[guild_id]
+        """取得 per-guild 的語音連線鎖。"""
+        return self.get_state(guild_id).voice_lock
 
     def _get_play_lock(self, guild_id: int) -> asyncio.Lock:
-        """取得或建立 per-guild 的 play_next 鎖，避免同一 guild 同時有多個
+        """取得 per-guild 的 play_next 鎖，避免同一 guild 同時有多個
         play_next() 在跑（例如 after_playing 回呼與例外重試同時觸發），
         導致互相搶著呼叫 voice_client.play() 而炸出 Already playing audio。"""
-        if guild_id not in self.play_locks:
-            self.play_locks[guild_id] = asyncio.Lock()
-        return self.play_locks[guild_id]
+        return self.get_state(guild_id).play_lock
 
     async def ensure_voice_connection(self, channel: discord.VoiceChannel) -> discord.VoiceClient:
         """安全地連接到語音頻道，處理 stale client、4017、timeout 等情況。
@@ -170,22 +155,31 @@ class MusicCog(commands.Cog):
             raise RuntimeError(f"❌ 無法加入語音頻道：{last_error}")
 
     # --- 輔助函式 ---
-    def get_queue(self, guild_id: int) -> deque: return self.queues.setdefault(guild_id, deque())
-    def get_loop_mode(self, guild_id: int) -> LoopMode: return self.loop_modes.setdefault(guild_id, LoopMode.NONE)
-    def set_loop_mode(self, guild_id: int, mode: LoopMode): self.loop_modes[guild_id] = mode
-    def get_current_song(self, guild_id: int): return self.current_songs.get(guild_id)
-    def set_current_song(self, guild_id: int, song_info): self.current_songs[guild_id] = song_info
-    def get_player_message(self, guild_id: int): return self.player_messages.get(guild_id)
-    def set_player_message(self, guild_id: int, message): self.player_messages[guild_id] = message
-    def get_player_view(self, guild_id: int): return self.player_views.get(guild_id)
-    def set_player_view(self, guild_id: int, view): self.player_views[guild_id] = view
-    def get_volume(self, guild_id: int) -> float: return self.volumes.setdefault(guild_id, 0.5)
-    def is_playlist_enabled(self, guild_id: int) -> bool: return self.playlist_enabled.setdefault(guild_id, True)
+    def get_state(self, guild_id: int) -> GuildState:
+        """取得（必要時建立）該 guild 的狀態。"""
+        state = self.states.get(guild_id)
+        if state is None:
+            state = self.states[guild_id] = GuildState()
+        return state
+
+    def get_queue(self, guild_id: int) -> deque: return self.get_state(guild_id).queue
+    def get_loop_mode(self, guild_id: int) -> LoopMode: return self.get_state(guild_id).loop_mode
+    def set_loop_mode(self, guild_id: int, mode: LoopMode): self.get_state(guild_id).loop_mode = mode
+    def get_current_song(self, guild_id: int): return self.get_state(guild_id).current_song
+    def set_current_song(self, guild_id: int, song_info): self.get_state(guild_id).current_song = song_info
+    def get_player_message(self, guild_id: int): return self.get_state(guild_id).player_message
+    def set_player_message(self, guild_id: int, message): self.get_state(guild_id).player_message = message
+    def get_player_view(self, guild_id: int): return self.get_state(guild_id).player_view
+    def set_player_view(self, guild_id: int, view): self.get_state(guild_id).player_view = view
+    def get_volume(self, guild_id: int) -> float: return self.get_state(guild_id).volume
+    def is_playlist_enabled(self, guild_id: int) -> bool: return self.get_state(guild_id).playlist_enabled
+    def set_playlist_enabled(self, guild_id: int, enabled: bool): self.get_state(guild_id).playlist_enabled = enabled
 
     def cancel_disconnect_timer(self, guild_id: int):
-        if guild_id in self.disconnect_timers:
-            self.disconnect_timers[guild_id].cancel()
-            del self.disconnect_timers[guild_id]
+        state = self.get_state(guild_id)
+        if state.disconnect_timer is not None:
+            state.disconnect_timer.cancel()
+            state.disconnect_timer = None
 
     async def start_disconnect_timer(self, interaction: discord.Interaction):
         guild_id = interaction.guild.id
@@ -196,7 +190,7 @@ class MusicCog(commands.Cog):
             if voice_client and not (voice_client.is_playing() or voice_client.is_paused()):
                 await interaction.channel.send("閒置超過 5 分鐘，自動離開頻道。")
                 await self.stop_and_leave(interaction)
-        self.disconnect_timers[guild_id] = asyncio.create_task(disconnect_after_delay())
+        self.get_state(guild_id).disconnect_timer = asyncio.create_task(disconnect_after_delay())
 
     def toggle_loop_mode(self, guild_id: int, mode: LoopMode):
         current_mode = self.get_loop_mode(guild_id)
@@ -214,15 +208,17 @@ class MusicCog(commands.Cog):
         return song.get('resume_offset', 0)
 
     def start_progress_task(self, guild_id: int):
-        if guild_id in self.progress_tasks and self.progress_tasks[guild_id].is_running(): return
+        state = self.get_state(guild_id)
+        if state.progress_task is not None and state.progress_task.is_running(): return
         task = tasks.loop(seconds=10)(self.update_progress)
-        self.progress_tasks[guild_id] = task
+        state.progress_task = task
         task.start(guild_id)
 
     def stop_progress_task(self, guild_id: int):
-        if guild_id in self.progress_tasks:
-            self.progress_tasks[guild_id].cancel()
-            del self.progress_tasks[guild_id]
+        state = self.get_state(guild_id)
+        if state.progress_task is not None:
+            state.progress_task.cancel()
+            state.progress_task = None
 
     async def update_progress(self, guild_id: int):
         view = self.get_player_view(guild_id)
@@ -351,7 +347,7 @@ class MusicCog(commands.Cog):
             voice_client.play(volume_source, after=after_playing)
 
             database.log_song_play(guild_id, next_song['requester'].id, next_song)
-            self.session_songs.setdefault(guild_id, []).append({
+            self.get_state(guild_id).session_songs.append({
                 'title': next_song['title'],
                 'url': next_song['url'],
                 'requester': next_song['requester'],
@@ -401,16 +397,16 @@ class MusicCog(commands.Cog):
             await interaction.channel.send(f"播放 **{title}** 時中斷: {error}")
             await self._retry_after_failure(interaction, guild_id)
         else:
-            self.consecutive_play_failures[guild_id] = 0
+            self.get_state(guild_id).consecutive_play_failures = 0
             await self.play_next(interaction)
 
     async def _retry_after_failure(self, interaction: discord.Interaction, guild_id: int):
         """播放/串流失敗後的節流重試：達到連續失敗上限就停止自動播放，
         否則延遲一段時間後才重試下一首，避免對來源連續轟炸。"""
-        failures = self.consecutive_play_failures.get(guild_id, 0) + 1
-        self.consecutive_play_failures[guild_id] = failures
-        if failures >= MAX_CONSECUTIVE_PLAY_FAILURES:
-            self.consecutive_play_failures[guild_id] = 0
+        state = self.get_state(guild_id)
+        state.consecutive_play_failures += 1
+        if state.consecutive_play_failures >= MAX_CONSECUTIVE_PLAY_FAILURES:
+            state.consecutive_play_failures = 0
             await interaction.channel.send("⚠️ 連續多首歌曲播放失敗，已停止自動播放，請稍後再用 /play 或按鈕重新開始。")
             self.set_current_song(guild_id, None)
             return
@@ -580,7 +576,8 @@ class MusicCog(commands.Cog):
 
     # --- 本次 session 播放摘要 ---
     async def _send_session_summary(self, channel: discord.TextChannel, guild_id: int):
-        songs = self.session_songs.pop(guild_id, [])
+        state = self.get_state(guild_id)
+        songs, state.session_songs = state.session_songs, []
         if not songs:
             return
         lines = []

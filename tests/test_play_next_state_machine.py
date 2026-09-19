@@ -75,7 +75,7 @@ async def test_queue_exhaustion_sends_ended_message_and_starts_disconnect_timer(
     assert music_cog.get_current_song(guild_id) is None
     assert player_message.edits and player_message.edits[-1]["content"] == "播放佇列已結束。"
     assert music_cog.get_player_message(guild_id) is None
-    assert guild_id in music_cog.disconnect_timers
+    assert music_cog.get_state(guild_id).disconnect_timer is not None
 
 
 async def test_recommend_mode_autoplays_when_queue_empties(music_cog, make_interaction, patch_ytdlp, temp_db):
